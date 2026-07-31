@@ -15,6 +15,7 @@ export function SetupHand({ transport, game, viewerId, onError }: Props) {
   const [picked, setPicked] = useState<string[]>([])
   const player = game.players.find((p) => p.playerId === viewerId)!
   const waiting = game.players.filter((p) => p.faceUp.length === 0 && p.playerId !== viewerId)
+  const locked = player.faceUp.length === FACE_UP_COUNT
 
   const toggle = (id: string) => {
     setPicked((current) =>
@@ -31,6 +32,23 @@ export function SetupHand({ transport, game, viewerId, onError }: Props) {
     if (!result.ok) return onError(result.error)
     onError(null)
     setPicked([])
+  }
+
+  if (locked) {
+    return (
+      <main className="screen setup">
+        <header className="setup__head">
+          <span className="eyebrow">{player.name}</span>
+          <h2 className="headline">Locked in</h2>
+          <p className="hint">Waiting on {waiting.map((p) => p.name).join(', ')}.</p>
+        </header>
+        <div className="setup__hand">
+          {player.faceUp.map((card) => (
+            <PlayingCard key={card.id} card={card} />
+          ))}
+        </div>
+      </main>
+    )
   }
 
   return (

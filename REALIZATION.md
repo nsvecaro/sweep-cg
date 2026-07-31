@@ -1,7 +1,28 @@
 # Realization — SweepGame
 
 Implementation of the AIM v5.6 intent model in `amy-sweepgame/aim/`. Written by the Developer role.
-Open questions are numbered in the last section; nothing in the model was silently decided.
+Open questions are listed first; nothing in the model was silently decided.
+
+## Open questions
+
+1. **When does the game end?** `WIN` retires a player at zero cards but nothing says the game is
+   over. Assumed: play continues until one player is left holding cards, and that player loses.
+2. Is a ten on a King or an Ace legal (interpretation 1)? The `Decides` block and `SPECIAL_10`
+   disagree.
+3. May a five be played on an Ace in medium and hard (interpretation 2)? `SPECIAL_ACE` and
+   `SPECIAL_5` disagree.
+4. What does a five played on a King, a Queen or an Ace mirror (interpretation 3)?
+5. Do fives chain — what is in force after 8, 5, 5?
+6. May a ten be played against the force-lower demand from a seven (interpretation 4)?
+7. Do two eights thrown together skip two players, or one (interpretation 5)?
+8. Should the first move be a forced 3 rather than "the lowest card opens" (interpretation 6)?
+9. May a player take the pile when they *do* hold a legal card? `PICKUP` says "cannot or chooses not
+   to", which reads as yes; confirm.
+10. What should happen when a player leaves a lobby, and when the host leaves?
+11. Is there a maximum table size? Six was assumed.
+12. Should the lobby offer a rematch that keeps the seats, or does it always return to waiting?
+13. Should a player who closes the tab be able to rejoin the same game? This decides whether lobbies
+    and games need persistence, and it should be settled before the multiplayer server is written.
 
 ## Choices where the model is silent
 
@@ -10,7 +31,7 @@ Open questions are numbered in the last section; nothing in the model was silent
 | Language | TypeScript, strict | The model's schemas are typed; the compiler enforces them |
 | Rules | A pure reducer (`applyAction`) over an immutable `GameState`, seeded RNG stored in state | The same module can run on an authoritative server unchanged, which multiplayer will need |
 | UI | React 18 + Vite | Smallest thing that renders a stateful table well and deploys as a static bundle |
-| Storage | In memory, per browser tab | The model names no persistence. See question 12 |
+| Storage | In memory, per browser tab | The model names no persistence. See question 13 |
 | Tests | Vitest, one test named after each requirement label | `npm run coverage:labels` parses the `.aim` files and fails on any uncovered label |
 
 ## Bindings
@@ -71,25 +92,28 @@ to `faceUp`, `PlayerReady` emitted) in `tests/setup.test.ts`; `DrawCards` and `P
 
 ## Interpretations
 
-Where the model admitted more than one reading, this is what was built. Each is an open question
-below.
+Where the model admitted more than one reading, this is what was built. Each has a matching open
+question above.
 
 1. **Legality gates the Sweep outcome.** `PlayCards`' Sweep criteria reads "the cards are 10s"
    unconditionally, but `SPECIAL_10` restricts tens to an empty pile or a card below ten. The
    requirement is treated as the legality gate: a ten on a King is rejected, and a blind ten on a
    King is a miss.
-2. **A five mirrors the active value, not the card beneath it.** The model spells out empty pile, on
+2. **A five still answers an Ace in medium and hard.** `SPECIAL_ACE` says the next player "must play
+   an Ace or a 2", but `SPECIAL_5` says fives go on any card. Where both are special, the five is
+   treated as wild and beats an Ace; in easy, where fives are ordinary, it does not.
+3. **A five mirrors the active value, not the card beneath it.** The model spells out empty pile, on
    an eight, and on a seven. Implemented as "the value currently in force", which reproduces all
    three cases and makes five-on-five chain correctly rather than crash.
-3. **Ten escapes force-lower.** `SPECIAL_7` lists escapes as "a valid special card like A, 2, 5" —
+4. **Ten escapes force-lower.** `SPECIAL_7` lists escapes as "a valid special card like A, 2, 5" —
    an open list. A ten is admitted since seven is below ten and the play burns the pile anyway.
-4. **One skip per eight.** Two eights in one throw skip two players.
-5. **The lowest card opens.** `FIRST_MOVE` says "typically a 3"; the player holding the lowest card
+5. **One skip per eight.** Two eights in one throw skip two players.
+6. **The lowest card opens.** `FIRST_MOVE` says "typically a 3"; the player holding the lowest card
    in hand takes the first turn. No card is forced.
-6. **Taking the pile is voluntary from hand or face-up, but not in the blind phase**, where
+7. **Taking the pile is voluntary from hand or face-up, but not in the blind phase**, where
    `ENDGAME` says the flip is the move.
-7. **Face-up cards are public.** Every seat renders its opponents' face-up cards.
-8. **Strict active-player enforcement.** `PlayCards`' Authz allows "or it's the very first move";
+8. **Face-up cards are public.** Every seat renders its opponents' face-up cards.
+9. **Strict active-player enforcement.** `PlayCards`' Authz allows "or it's the very first move";
    with one authoritative reducer that race cannot occur, so only the active player may act.
 
 ## Deviations and additions
@@ -106,23 +130,4 @@ below.
   and they act only through `getLegalMoves`, so they cannot produce a state a human could not.
 - **Extra seats on one device** (pass-and-play) with a handover screen, for the same reason.
 - The lobby gained leaving, host reassignment when the host leaves, and a six-player cap. None are
-  modelled — see questions 9 and 10.
-
-## Open questions
-
-1. **When does the game end?** `WIN` retires a player at zero cards but nothing says the game is
-   over. Assumed: play continues until one player is left holding cards, and that player loses.
-2. Is a ten on a King or an Ace legal (interpretation 1)? The `Decides` block and `SPECIAL_10`
-   disagree.
-3. What does a five played on a King, a Queen or an Ace mirror (interpretation 2)?
-4. Do fives chain — what is in force after 8, 5, 5?
-5. May a ten be played against the force-lower demand from a seven (interpretation 3)?
-6. Do two eights thrown together skip two players, or one (interpretation 4)?
-7. Should the first move be a forced 3 rather than "the lowest card opens" (interpretation 5)?
-8. May a player take the pile when they *do* hold a legal card? `PICKUP` says "cannot or chooses not
-   to", which reads as yes; confirm.
-9. What should happen when a player leaves a lobby, and when the host leaves?
-10. Is there a maximum table size? Six was assumed.
-11. Should the lobby offer a rematch that keeps the seats, or does it always return to waiting?
-12. Should a player who closes the tab be able to rejoin the same game? This decides whether lobbies
-    and games need persistence, and it should be settled before the multiplayer server is written.
+  modelled — see questions 10 and 11.

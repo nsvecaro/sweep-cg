@@ -14,6 +14,10 @@ export function App({ transport: injected }: { transport?: SweepTransport } = {}
   const [passedTo, setPassedTo] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!room.game) setPassedTo(null)
+  }, [room.game])
+
+  useEffect(() => {
     if (!error) return
     const timer = setTimeout(() => setError(null), 3600)
     return () => clearTimeout(timer)

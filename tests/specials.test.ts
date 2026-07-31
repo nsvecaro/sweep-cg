@@ -20,6 +20,8 @@ describe('special cards', () => {
     expect(canPlayValue(2, board(14))).toBe(true)
     expect(canPlayValue(13, board(14))).toBe(false)
     expect(canPlayValue(10, board(14))).toBe(false)
+    expect(canPlayValue(5, board(14, false, 'easy'))).toBe(false)
+    expect(canPlayValue(5, board(14, false, 'medium'))).toBe(true)
   })
 
   it('SPECIAL_2 — a two lands on anything and drops the pile back to two', () => {
