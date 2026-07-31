@@ -135,14 +135,27 @@ describe('special cards', () => {
     expect(result.events).toContainEqual({ type: 'PlayerSkipped', playerId: 'b' })
   })
 
-  it('SPECIAL_8 — each eight in a multi-card play skips one more player', () => {
+  it('SPECIAL_8 — a stack of eights still skips exactly one player', () => {
     const state = stateOf({
       seats: [{ id: 'a', hand: ['8h', '8c', 'Kd'] }, { id: 'b' }, { id: 'c' }],
       pile: ['6s'],
       deck: [],
     })
     const result = applyAction(state, { type: 'playCards', playerId: 'a', cardIds: ['h8', 'c8'] })
-    expect(result.state.activePlayerId).toBe('a')
+    expect(result.state.activePlayerId).toBe('c')
+  })
+
+  it('SPECIAL_8 — in a two-player game any number of eights hands the turn straight back', () => {
+    const state = stateOf({
+      seats: [{ id: 'a', hand: ['8h', '8c', '8s', 'Kd'] }, { id: 'b' }],
+      pile: ['6s'],
+      deck: [],
+    })
+    for (const throwing of [['h8'], ['h8', 'c8'], ['h8', 'c8', 's8']]) {
+      const result = applyAction(state, { type: 'playCards', playerId: 'a', cardIds: throwing })
+      expect(result.error).toBeNull()
+      expect(result.state.activePlayerId).toBe('a')
+    }
   })
 
   it('SPECIAL_10 — a ten sweeps the pile to the graveyard and the player goes again', () => {

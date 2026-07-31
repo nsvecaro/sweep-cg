@@ -14,7 +14,8 @@ Open questions are listed first; nothing in the model was silently decided.
 4. What does a five played on a King, a Queen or an Ace mirror (interpretation 3)?
 5. Do fives chain — what is in force after 8, 5, 5?
 6. May a ten be played against the force-lower demand from a seven (interpretation 4)?
-7. Do two eights thrown together skip two players, or one (interpretation 5)?
+7. ~~Do two eights thrown together skip two players, or one?~~ **Answered by the owner:** one skip,
+   however many eights are thrown. `SPECIAL_8` should say so. Built and tested (interpretation 5).
 8. Should the first move be a forced 3 rather than "the lowest card opens" (interpretation 6)?
 9. May a player take the pile when they *do* hold a legal card? `PICKUP` says "cannot or chooses not
    to", which reads as yes; confirm.
@@ -107,7 +108,8 @@ question above.
    three cases and makes five-on-five chain correctly rather than crash.
 4. **Ten escapes force-lower.** `SPECIAL_7` lists escapes as "a valid special card like A, 2, 5" —
    an open list. A ten is admitted since seven is below ten and the play burns the pile anyway.
-5. **One skip per eight.** Two eights in one throw skip two players.
+5. **One skip per throw of eights, not per eight.** Confirmed by the owner: throwing three eights is
+   the same as throwing one, so in a two-player game the turn comes straight back.
 6. **The lowest card opens.** `FIRST_MOVE` says "typically a 3"; the player holding the lowest card
    in hand takes the first turn. No card is forced.
 7. **Taking the pile is voluntary from hand or face-up, but not in the blind phase**, where

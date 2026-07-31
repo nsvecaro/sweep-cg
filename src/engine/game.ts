@@ -241,7 +241,7 @@ function resolvePlay(
     return
   }
 
-  const effect = applyValueEffect(value, cards.length, boardOf(state))
+  const effect = applyValueEffect(value, boardOf(state))
   state.activeValue = effect.activeValue
   state.forceLower = effect.forceLower
   events.push({ type: 'CardsPlayed', playerId: player.playerId, cards })
