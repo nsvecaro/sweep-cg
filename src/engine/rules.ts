@@ -51,9 +51,9 @@ export function canPlayValue(value: number, board: Board): boolean {
 
 /**
  * The board state a play leaves behind, before sweeps are resolved.
- * A throw of eights skips one player however many were thrown.
+ * Eights stack: each one skips the next seat still in the game.
  */
-export function applyValueEffect(value: number, board: Board): {
+export function applyValueEffect(value: number, count: number, board: Board): {
   activeValue: number
   forceLower: boolean
   skips: number
@@ -67,7 +67,7 @@ export function applyValueEffect(value: number, board: Board): {
     return { activeValue: 7, forceLower: true, skips: 0 }
   }
   if (value === 8 && isSpecial(8, difficulty)) {
-    return { activeValue: 8, forceLower: false, skips: 1 }
+    return { activeValue: 8, forceLower: false, skips: count }
   }
   return { activeValue: value, forceLower: false, skips: 0 }
 }
