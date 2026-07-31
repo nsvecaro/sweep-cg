@@ -1,0 +1,118 @@
+---
+aim: sweepgame.lobby
+kind: intent
+parent: sweepgame
+tags: [software]
+---
+
+# Multiplayer Lobby
+
+## Summary
+Manages player identities, lobby creation, and matchmaking before a game of Sweep begins.
+
+## Requirements
+- **PLAYER_NAME** — A player can set a custom username or generate a randomized one.
+- **LOBBY_CREATE** — A player can create a new multiplayer lobby, becoming its host.
+- **LOBBY_CODE** — Every lobby has a unique 5-character alphanumeric join code.
+- **LOBBY_JOIN** — Players can join a lobby using its 5-character code.
+
+## Record: PlayerProfile
+
+### Summary
+A player's pre-game identity.
+
+### Schema
+```schema
+playerId: string required
+username: string required
+```
+
+## Record: Lobby
+
+### Summary
+A pre-game waiting room where players gather.
+
+### Schema
+```schema
+code: string required min(5) max(5)
+hostId: string required ref(PlayerProfile.playerId)
+playerIds: list(string)
+status: enum(waiting, playing) required
+```
+
+## Contract: SetUsername
+
+### Summary
+Saves the player's chosen or randomized username.
+
+### Input
+```schema
+username: string required
+isRandomized: boolean required
+```
+
+### Ensures
+- The player's username is saved — [mutates](aim:#Record:PlayerProfile), [satisfies](aim:#Requirements[PLAYER_NAME]), [satisfies](aim:sweepgame#Requirements[MULTIPLAYER]).
+
+## Contract: CreateLobby
+
+### Summary
+Creates a new lobby and assigns the creator as the host.
+
+### Ensures
+- A new Lobby is created with a unique 5-character code — [mutates](aim:#Record:Lobby), [satisfies](aim:#Requirements[LOBBY_CODE]), [satisfies](aim:#Requirements[LOBBY_CREATE]), [satisfies](aim:sweepgame#Requirements[MULTIPLAYER]).
+- The creator is added to the lobby and set as the host.
+- Emits a lobby created event — [emits](aim:#Event:LobbyCreated).
+
+## Contract: JoinLobby
+
+### Summary
+Adds a player to an existing lobby via its code.
+
+### Input
+```schema
+code: string required
+```
+
+### Expects
+- The code must match an active lobby.
+
+### Ensures
+- The player is added to the lobby's participant list — [mutates](aim:#Record:Lobby), [satisfies](aim:#Requirements[LOBBY_JOIN]), [satisfies](aim:sweepgame#Requirements[MULTIPLAYER]).
+- Emits a player joined event — [emits](aim:#Event:PlayerJoined).
+
+## View: MainMenu
+
+### Summary
+The entry screen where players set their name and choose to host or join.
+
+### Display
+- Input for username and a randomize button.
+- Input for a 5-character join code.
+
+### Actions
+- Set username — [exposes](aim:#Contract:SetUsername).
+- Create a new lobby — [exposes](aim:#Contract:CreateLobby).
+- Join an existing lobby — [exposes](aim:#Contract:JoinLobby).
+
+## Event: LobbyCreated
+
+### Summary
+Emitted when a new lobby is opened.
+
+### Payload
+```schema
+code: string required
+hostId: string required
+```
+
+## Event: PlayerJoined
+
+### Summary
+Emitted when a player successfully joins a lobby.
+
+### Payload
+```schema
+code: string required
+playerId: string required
+```

@@ -1,0 +1,153 @@
+---
+aim: sweepgame
+kind: intent
+tags: [software]
+---
+
+# SweepGame
+
+## Summary
+The core engine for the card game 'Sweep'. Players are dealt a hand, face-up cards, and blind face-down cards. They must play cards of equal or higher value to the pile, utilizing special cards (2, 10, Ace) and 4-of-a-kind sweeps to avoid picking up the pile. The goal is to empty all cards from hand, face-up, and face-down. New difficulties introduce automated setup and complex special cards. Multiplayer matchmaking lets players group up before a game via unique 5-character codes.
+
+## Requirements
+- **SETUP** — Each player receives 3 face-down cards.
+- **DIFF_EASY** — In Easy mode, players receive 6 cards to their hand and select 3 to place face-up. Special cards are A, 2, 10.
+- **DIFF_MEDIUM** — In Medium mode, setup matches Easy, but introduces special cards 5, 7, and 8.
+- **DIFF_HARD** — In Hard mode, players receive 3 face-up cards dealt randomly (no choice), and 3 cards to their hand. Uses Medium's special cards.
+- **PLAY_ORDER** — Players MUST play cards from their hand if they have any. Face-up cards can only be played if the hand is completely empty. Face-down cards can only be played if both the hand and face-up cards are empty.
+- **MIN_HAND** — Players must maintain at least 3 cards in their hand by drawing from the deck after their turn, until the deck is empty.
+- **VALID_PLAY** — A played card must be equal to or higher than the current top card of the pile, unless altered by a special card rule.
+- **PLAY_MULTIPLES** — Players may play multiple cards of the exact same value in a single turn.
+- **SWEEP_FOUR** — If exactly four cards of the same face value (e.g. four 4s, four 7s, four 8s) land consecutively on top of the pile, the pile is swept to the graveyard and the player plays again. Mirrored sequences (like A, 5, A, 5) do not count as a sweep.
+- **SPECIAL_ACE** — Aces can be played on any card. The next player must play an Ace or a 2.
+- **SPECIAL_2** — 2s can be played on any card. The pile's active value resets to 2.
+- **SPECIAL_5** — 5s can be played on any card. On an empty pile, the pile's value becomes 0 (any card can be played next). When played on an 8, it mirrors the value 8 but does not copy the skip effect. When played on a 7, it mirrors the value 7 and maintains the "force lower" effect.
+- **SPECIAL_7** — 7s can only be played on a 7 or lower. When played, the next player MUST play a card 7 or lower (or a valid special card like A, 2, 5).
+- **SPECIAL_8** — 8s can only be played on an 8 or lower. When played, the next player's turn is skipped.
+- **SPECIAL_10** — 10s can be played on an empty pile or any card less than 10. The pile (including the 10) is swept to the graveyard, and the player plays again.
+- **PICKUP** — If a player cannot or chooses not to play a valid card, they must pick up the entire pile into their hand.
+- **ENDGAME** — Face-down cards can only be played one at a time, blindly, when the hand and face-up cards are empty. If the revealed card is invalid, the player picks up the pile.
+- **WIN** — A player wins and leaves the game when they have zero cards in hand, zero face-up cards, and zero face-down cards.
+- **FIRST_MOVE** — The game begins when the first player throws a card (typically a 3).
+- **MULTIPLAYER** — Players can set usernames and join multiplayer lobbies before starting a game.
+
+## Children
+- [cards](./cards/sweepgame.cards.aim) — Core card playing rules and actions
+- [lobby](./lobby/sweepgame.lobby.aim) — Multiplayer matchmaking, player names, and lobby codes
+
+## Record: Card
+
+### Summary
+A playing card.
+
+### Schema
+```schema
+suit: enum(hearts, diamonds, clubs, spades) required
+value: number required min(2) max(14)
+```
+
+## Record: GameState
+
+### Summary
+The state of the shared game board.
+
+### Schema
+```schema
+difficulty: enum(easy, medium, hard) required
+deck: list(Card)
+pile: list(Card)
+graveyard: list(Card)
+activeValue: number optional
+forceLower: boolean default(false)
+```
+
+## Record: PlayerState
+
+### Summary
+The state of an individual player's cards.
+
+### Schema
+```schema
+playerId: string required
+hand: list(Card)
+faceUp: list(Card)
+faceDown: list(Card)
+isFinished: boolean required
+```
+
+## Persona: Player
+
+### Role
+A participant in the Sweep game.
+
+### Access
+- [accesses](aim:sweepgame.lobby)
+- [accesses](aim:#View:GameBoard)
+
+## View: GameBoard
+
+### Summary
+The main table view showing the deck, pile, graveyard, and players' hands/table cards.
+
+### Display
+- The active [reads](aim:#Record:GameState).
+- The player's own [reads](aim:#Record:PlayerState).
+
+### Actions
+- Set 3 face-up cards — [exposes](aim:sweepgame.cards#Contract:SetFaceUpCards)
+- Play card(s) from hand or face-up — [exposes](aim:sweepgame.cards#Contract:PlayCards)
+- Play a blind face-down card — [exposes](aim:sweepgame.cards#Contract:PlayFaceDownCard)
+- Take the pile — [exposes](aim:sweepgame.cards#Contract:PickUpPile)
+
+## Flow: GameEngine
+
+### Summary
+Orchestrates game state transitions based on player events.
+
+### Steps
+1. Initialize the game setup phase — [invokes](aim:sweepgame.cards#Flow:SetupGame).
+2. A player finishes setup — [subscribes](aim:#Event:PlayerReady).
+3. A player completes a valid play — [subscribes](aim:#Event:CardsPlayed).
+4. A player triggers a sweep — [subscribes](aim:#Event:PileSwept).
+5. A play is rejected — [subscribes](aim:#Event:PlayRejected).
+
+## Event: CardsPlayed
+
+### Summary
+Emitted when cards are successfully played.
+
+### Payload
+```schema
+playerId: string required
+cards: list(Card)
+```
+
+## Event: PileSwept
+
+### Summary
+Emitted when the pile is cleared to the graveyard.
+
+### Payload
+```schema
+playerId: string required
+```
+
+## Event: PlayerReady
+
+### Summary
+Emitted when a player finishes setting their face-up cards.
+
+### Payload
+```schema
+playerId: string required
+```
+
+## Event: PlayRejected
+
+### Summary
+Emitted when a player attempts an invalid play.
+
+### Payload
+```schema
+playerId: string required
+```

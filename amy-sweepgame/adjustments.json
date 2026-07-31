@@ -1,0 +1,44 @@
+{
+  "project": {
+    "id": "bb8839ca-0105-492a-8100-6320a4989f8c",
+    "name": "SweepGame",
+    "createdAt": "2026-07-31T08:51:43.321Z",
+    "updatedAt": "2026-07-31T12:28:48.605Z"
+  },
+  "generatedAt": "2026-07-31T18:32:34.720Z",
+  "aimVersion": "5.6",
+  "adjustments": [
+    {
+      "id": "d46e0b9a-bb76-44aa-8183-526e3d610550",
+      "title": "Add multiplayer lobbies and player names",
+      "description": "Introduced a lobby system. Players can set custom or randomized names. They can host a new lobby (which generates a unique 5-character code) or join an existing lobby using its code.",
+      "type": "enhancement",
+      "severity": null,
+      "affectedComponents": [],
+      "rationale": "",
+      "screenshotIds": [],
+      "status": "applied",
+      "createdAt": "2026-07-31T12:27:56.733Z"
+    }
+  ],
+  "proposals": [
+    {
+      "id": "d40a34fb-56ca-4c35-927d-0fe5f5074c54",
+      "op": "modify",
+      "path": "sweepgame/lobby/sweepgame.lobby.aim",
+      "component": "sweepgame.lobby",
+      "summary": "Wire the parent MULTIPLAYER requirement to the lobby contracts to satisfy the check.",
+      "adjustmentId": "d46e0b9a-bb76-44aa-8183-526e3d610550",
+      "status": "accepted"
+    },
+    {
+      "id": "1ff25965-db02-40fc-ba97-d4e7bbe2e229",
+      "op": "modify",
+      "path": "sweepgame/sweepgame.aim",
+      "component": "sweepgame",
+      "summary": "Fix link in Children list and provide the Player persona access to the lobby intent to clear the orphan warning.",
+      "adjustmentId": "d46e0b9a-bb76-44aa-8183-526e3d610550",
+      "status": "accepted"
+    }
+  ]
+}

@@ -1,0 +1,103 @@
+---
+aim: sweepgame.cards
+kind: intent
+parent: sweepgame
+tags: [software]
+---
+
+# Cards
+
+## Summary
+The logic and rules for playing cards, drawing, sweeping, and resolving turn outcomes in Sweep.
+
+## Requirements
+- **RULES** — Enforces valid plays and special card rules.
+- **DECK_PILE** — Manages drawing from the deck and picking up the pile.
+
+## Flow: SetupGame
+
+### Summary
+The initial dealing and setup phase before gameplay begins. Setup logic branches based on game difficulty.
+
+### Steps
+1. Deal 3 cards face-down to each player — [mutates](aim:sweepgame#Record:PlayerState), [satisfies](aim:sweepgame#Requirements[SETUP]).
+2. If difficulty is Easy or Medium: Deal 6 cards to each player's hand. Each player selects 3 from their hand to place face-up — [invokes](aim:#Contract:SetFaceUpCards), [satisfies](aim:sweepgame#Requirements[DIFF_EASY]), [satisfies](aim:sweepgame#Requirements[DIFF_MEDIUM]).
+3. If difficulty is Hard: Deal 3 cards face-up to each player automatically, then deal 3 cards to their hand — [mutates](aim:sweepgame#Record:PlayerState), [satisfies](aim:sweepgame#Requirements[DIFF_HARD]).
+
+## Contract: SetFaceUpCards
+
+### Summary
+During setup (in Easy/Medium difficulty), the player selects 3 cards from their 6-card hand to place face-up on top of their face-down cards, leaving them with exactly 3 cards in their hand to start the game.
+
+### Input
+```schema
+selectedCards: list(Card)
+```
+
+### Authz
+- Player must be in the game, and the game difficulty must be Easy or Medium.
+
+### Ensures
+- The 3 chosen cards are moved from the player's hand to their `faceUp` list — [mutates](aim:sweepgame#Record:PlayerState).
+- Emits a setup ready event — [emits](aim:sweepgame#Event:PlayerReady).
+
+## Contract: PlayCards
+
+### Summary
+Player throws one or more cards of the exact same value from their hand (or face-up cards, if hand is empty). 
+
+### Authz
+- Player must be the active player (or it's the very first move of the game).
+
+### Expects
+- If playing from face-up cards, the player's hand MUST be completely empty — [satisfies](aim:sweepgame#Requirements[PLAY_ORDER]).
+
+### Decides
+- **Sweep** — The cards are 10s, OR the play completes an exact 4-of-a-kind (four cards of the same face value consecutively) on top of the pile. The pile is moved to the graveyard, the player draws if needed, and the player gets another turn — [mutates](aim:sweepgame#Record:GameState), [emits](aim:sweepgame#Event:PileSwept), [satisfies](aim:sweepgame#Requirements[SPECIAL_10]), [satisfies](aim:sweepgame#Requirements[SWEEP_FOUR]).
+- **ValidPlay** — The cards are valid (>= active value, or <= active value if 7 was played prior, or special). The cards are added to the pile.
+  - If 7 is played, the game state updates to force the next player to play 7 or lower — [mutates](aim:sweepgame#Record:GameState), [satisfies](aim:sweepgame#Requirements[SPECIAL_7]).
+  - If 8 is played, the turn advances twice (skipping the next player) — [satisfies](aim:sweepgame#Requirements[SPECIAL_8]).
+  - If 5 is played, it sets the active value to 0 if played on an empty pile. If played on an 8, it copies the value but does not skip. If played on a 7, it copies the value and maintains the force-lower requirement — [satisfies](aim:sweepgame#Requirements[SPECIAL_5]).
+  - Otherwise, the turn advances normally and any "force lower" state is cleared.
+  — [mutates](aim:sweepgame#Record:GameState), [emits](aim:sweepgame#Event:CardsPlayed), [satisfies](aim:sweepgame#Requirements[VALID_PLAY]), [satisfies](aim:sweepgame#Requirements[SPECIAL_2]), [satisfies](aim:sweepgame#Requirements[SPECIAL_ACE]), [satisfies](aim:sweepgame#Requirements[PLAY_MULTIPLES]), [satisfies](aim:sweepgame#Requirements[FIRST_MOVE]), [satisfies](aim:#Requirements[RULES]), [invokes](aim:#Flow:ResolveTurnEnd).
+- **Invalid** — The cards are not a valid play. The action is rejected — [emits](aim:sweepgame#Event:PlayRejected).
+
+## Flow: ResolveTurnEnd
+
+### Summary
+After a valid play (that isn't a sweep), resolves drawing cards and checking win conditions.
+
+### Steps
+1. Check hand size: if the player has < 3 cards and the deck is not empty, draw cards until the hand has 3 — [invokes](aim:#Contract:DrawCards), [satisfies](aim:sweepgame#Requirements[MIN_HAND]).
+2. Check win condition: if the player's hand, face-up, and face-down are all empty, mark them as finished — [mutates](aim:sweepgame#Record:PlayerState), [satisfies](aim:sweepgame#Requirements[WIN]).
+
+## Contract: DrawCards
+
+### Summary
+Draws cards from the deck to the player's hand.
+
+### Ensures
+- Moves cards from the deck to the player's hand — [mutates](aim:sweepgame#Record:GameState), [mutates](aim:sweepgame#Record:PlayerState), [satisfies](aim:#Requirements[DECK_PILE]).
+
+## Contract: PickUpPile
+
+### Summary
+Player picks up the entire pile into their hand.
+
+### Ensures
+- All cards in the pile are added to the player's hand.
+- The pile is emptied, and any "force lower" state is reset — [mutates](aim:sweepgame#Record:GameState), [mutates](aim:sweepgame#Record:PlayerState), [satisfies](aim:sweepgame#Requirements[PICKUP]), [satisfies](aim:#Requirements[DECK_PILE]).
+- The turn advances to the next player.
+
+## Contract: PlayFaceDownCard
+
+### Summary
+During the endgame, the player blind-plays one of their face-down cards.
+
+### Expects
+- The player's hand and face-up cards MUST be completely empty — [satisfies](aim:sweepgame#Requirements[PLAY_ORDER]).
+
+### Decides
+- **Sweep** — The revealed card is a 10 or completes a 4-of-a-kind. Pile swept, player goes again — [emits](aim:sweepgame#Event:PileSwept).
+- **ValidPlay** — The revealed card is valid according to current board state. It is added to the pile, turn advances — [emits](aim:sweepgame#Event:CardsPlayed), [satisfies](aim:sweepgame#Requirements[ENDGAME]), [invokes](aim:#Flow:ResolveTurnEnd).
+- **Invalid** — The revealed card is not a valid play. The card and the entire pile are picked up into the player's hand. The turn advances — [invokes](aim:#Contract:PickUpPile).
