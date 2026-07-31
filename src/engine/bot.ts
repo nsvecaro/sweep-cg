@@ -26,7 +26,7 @@ export function chooseBotAction(state: GameState, playerId: string): GameAction 
     return moveToAction(pick, playerId)
   }
 
-  let best = moves[0]
+  let best: LegalMove = moves[0]
   let bestScore = -Infinity
   for (const move of moves) {
     const score = moveScore(state, playerId, move)
