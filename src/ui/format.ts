@@ -55,7 +55,7 @@ export function describeEvent(event: GameEvent, nameOf: (id: string) => string):
     case 'CardsPlayed':
       return `${nameOf(event.playerId)} threw ${event.cards.map(short).join(' ')}`
     case 'PileSwept':
-      return `${nameOf(event.playerId)} swept ${event.cards.length} cards — going again`
+      return `${nameOf(event.playerId)} swept with ${sweepCause(event.reason)} — going again`
     case 'PileTaken':
       return `${nameOf(event.playerId)} took ${event.count} cards`
     case 'PlayerSkipped':
@@ -71,6 +71,28 @@ export function describeEvent(event: GameEvent, nameOf: (id: string) => string):
     case 'CardsDrawn':
       return null
   }
+}
+
+function sweepCause(reason: 'ten' | 'quad'): string {
+  return reason === 'ten' ? 'a 10' : '4 of a kind'
+}
+
+/** Punchy headline for throwing 2+ of a kind at once. */
+export function burstLabel(count: number): string | null {
+  switch (count) {
+    case 2:
+      return 'Double Trouble!'
+    case 3:
+      return 'Triple Threat!'
+    case 4:
+      return 'Quadzilla!!'
+    default:
+      return null
+  }
+}
+
+export function sweepLabel(name: string, reason: 'ten' | 'quad'): string {
+  return `${name} swept with ${sweepCause(reason)}`
 }
 
 function short(card: { value: number; suit: string }): string {

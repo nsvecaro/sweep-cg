@@ -288,10 +288,11 @@ function resolvePlay(
 ): void {
   if (isSweep(state.pile, value)) {
     const swept = state.pile
+    const reason = value === 10 ? 'ten' : 'quad'
     state.graveyard.push(...swept)
     state.pile = []
     clearBoard(state)
-    events.push({ type: 'PileSwept', playerId: player.playerId, cards: swept })
+    events.push({ type: 'PileSwept', playerId: player.playerId, cards: swept, reason })
     drawToMinimum(state, player, events)
     checkFinished(state, player, events)
     if (player.isFinished) advanceTurn(state, 1, events)

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   RANK_LABEL,
   getLegalMoves,
@@ -12,7 +12,15 @@ import { LeaveGame } from './LeaveGame'
 import { CardBack, EmptySlot, PlayingCard } from './PlayingCard'
 import { PlayLog } from './PlayLog'
 import { Result } from './Result'
-import { demandOf } from './format'
+import { burstLabel, demandOf, sweepLabel } from './format'
+
+interface Announce {
+  key: number
+  kind: 'burst' | 'sweep'
+  text: string
+}
+
+const SPARKS = Array.from({ length: 8 }, (_, i) => i)
 
 interface Props {
   transport: SweepTransport
@@ -25,6 +33,9 @@ interface Props {
 export function GameTable({ transport, room, game, viewerId, onError }: Props) {
   const [selected, setSelected] = useState<string[]>([])
   const [flash, setFlash] = useState(false)
+  const [announce, setAnnounce] = useState<Announce | null>(null)
+  const lastLogId = useRef(-1)
+  const seenLog = useRef(false)
 
   const viewer = game.players.find((p) => p.playerId === viewerId)!
   const opponents = game.players.filter((p) => p.playerId !== viewerId)
@@ -45,6 +56,32 @@ export function GameTable({ transport, room, game, viewerId, onError }: Props) {
     const timer = setTimeout(() => setFlash(false), 320)
     return () => clearTimeout(timer)
   }, [game.graveyard.length])
+
+  useEffect(() => {
+    if (!seenLog.current) {
+      seenLog.current = true
+      lastLogId.current = room.log.at(-1)?.id ?? -1
+      return
+    }
+    const fresh = room.log.filter((entry) => entry.id > lastLogId.current)
+    lastLogId.current = room.log.at(-1)?.id ?? lastLogId.current
+
+    for (const entry of fresh) {
+      const event = entry.event
+      if (event.type === 'CardsPlayed') {
+        const text = burstLabel(event.cards.length)
+        if (text) setAnnounce({ key: entry.id, kind: 'burst', text })
+      } else if (event.type === 'PileSwept') {
+        setAnnounce({ key: entry.id, kind: 'sweep', text: sweepLabel(nameOf(game, event.playerId), event.reason) })
+      }
+    }
+  }, [room.log])
+
+  useEffect(() => {
+    if (!announce) return
+    const timer = setTimeout(() => setAnnounce(null), announce.kind === 'sweep' ? 1700 : 950)
+    return () => clearTimeout(timer)
+  }, [announce])
 
   const owned = [...viewer.hand, ...viewer.faceUp]
   const chosen = selected.filter((id) => owned.some((c) => c.id === id))
@@ -89,25 +126,48 @@ export function GameTable({ transport, room, game, viewerId, onError }: Props) {
 
       <section className="board">
         <div className="demand" aria-live="polite">
-          <p className="demand__headline">{demand.headline}</p>
+          <p
+            key={announce?.key ?? 'default'}
+            className={`demand__headline ${announce ? `demand__headline--${announce.kind}` : ''}`}
+          >
+            {announce ? announce.text : demand.headline}
+          </p>
           <p className="demand__escapes">{demand.escapes}</p>
         </div>
 
         <div className="board__row">
           <Stack label="Deck" count={game.deck.length} />
           <div className="pile">
+            {announce?.kind === 'burst' && (
+              <span key={announce.key} className="pile__burst" aria-hidden="true">
+                {SPARKS.map((i) => (
+                  <i key={i} className="pile__spark" style={{ '--i': i } as React.CSSProperties} />
+                ))}
+              </span>
+            )}
             {game.pile.length === 0 ? (
               <EmptySlot label="Empty" />
             ) : (
-              game.pile.slice(-4).map((card, index, shown) => (
-                <div
-                  key={card.id}
-                  className="pile__card"
-                  style={{ '--depth': shown.length - 1 - index } as React.CSSProperties}
-                >
-                  <PlayingCard card={card} />
-                </div>
-              ))
+              game.pile.slice(-5).map((card, index, shown) => {
+                const depth = shown.length - 1 - index
+                const seed = hashCardId(card.id)
+                return (
+                  <div
+                    key={card.id}
+                    className="pile__card"
+                    style={
+                      {
+                        '--depth': depth,
+                        '--jx': ((seed % 7) - 3) * (depth + 1),
+                        '--jy': (((seed >> 3) % 5) - 2) * (depth + 1),
+                        '--jr': ((seed >> 6) % 17) - 8,
+                      } as React.CSSProperties
+                    }
+                  >
+                    <PlayingCard card={card} />
+                  </div>
+                )
+              })
             )}
             {game.pile.length > 0 && <span className="pile__count">{game.pile.length}</span>}
           </div>
@@ -195,6 +255,13 @@ export function GameTable({ transport, room, game, viewerId, onError }: Props) {
       {game.phase === 'finished' && <Result game={game} onDone={() => void send(transport.returnToLobby())} />}
     </main>
   )
+}
+
+/** Deterministic per-card scatter so the pile reads as tossed, not fanned. */
+function hashCardId(id: string) {
+  let hash = 0
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) | 0
+  return Math.abs(hash)
 }
 
 function cardState(interactive: boolean, playable: boolean) {

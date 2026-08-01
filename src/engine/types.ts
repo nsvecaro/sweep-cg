@@ -50,7 +50,7 @@ export type GameAction =
 export type GameEvent =
   | { type: 'PlayerReady'; playerId: string }
   | { type: 'CardsPlayed'; playerId: string; cards: Card[] }
-  | { type: 'PileSwept'; playerId: string; cards: Card[] }
+  | { type: 'PileSwept'; playerId: string; cards: Card[]; reason: 'ten' | 'quad' }
   | { type: 'PlayRejected'; playerId: string; reason: string }
   | { type: 'PileTaken'; playerId: string; count: number }
   | { type: 'CardsDrawn'; playerId: string; count: number }
