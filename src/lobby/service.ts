@@ -1,6 +1,6 @@
-import { generateLobbyCode, normalizeLobbyCode } from './codes'
-import { randomUsername, sanitizeUsername } from './names'
-import { MAX_LOBBY_PLAYERS, type Lobby, type LobbyEvent, type LobbyStatus, type PlayerProfile } from './types'
+import { generateLobbyCode, normalizeLobbyCode } from './codes.js'
+import { randomUsername, sanitizeUsername } from './names.js'
+import { MAX_LOBBY_PLAYERS, type Lobby, type LobbyEvent, type LobbyStatus, type PlayerProfile } from './types.js'
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string }
 

@@ -1,7 +1,7 @@
-import { nextRandom } from './deck'
-import { applyAction, getLegalMoves, moveToAction } from './game'
-import { isSpecial } from './rules'
-import type { GameAction, GameState, LegalMove } from './types'
+import { nextRandom } from './deck.js'
+import { applyAction, getLegalMoves, moveToAction } from './game.js'
+import { isSpecial } from './rules.js'
+import type { GameAction, GameState, LegalMove } from './types.js'
 
 function moveScore(state: GameState, playerId: string, move: LegalMove): number {
   if (move.kind === 'pickUp') return -10000

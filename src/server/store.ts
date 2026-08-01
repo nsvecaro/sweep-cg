@@ -1,6 +1,6 @@
 import { Redis } from '@upstash/redis'
-import { generateLobbyCode } from '../lobby/codes'
-import type { RoomRecord } from './room'
+import { generateLobbyCode } from '../lobby/codes.js'
+import type { RoomRecord } from './room.js'
 
 /** Rooms are disposable: a table nobody has touched for a day is gone. */
 const TTL_SECONDS = 60 * 60 * 24

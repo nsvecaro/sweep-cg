@@ -1,4 +1,4 @@
-import type { Card, Difficulty, GameState } from './types'
+import type { Card, Difficulty, GameState } from './types.js'
 
 export const HAND_MINIMUM = 3
 export const SWEEP_RUN = 4

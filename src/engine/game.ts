@@ -1,4 +1,4 @@
-import { buildDeck, shuffle } from './deck'
+import { buildDeck, shuffle } from './deck.js'
 import {
   HAND_MINIMUM,
   applyValueEffect,
@@ -6,7 +6,7 @@ import {
   canPlayValue,
   isSweep,
   playableZone,
-} from './rules'
+} from './rules.js'
 import type {
   ActionResult,
   Card,
@@ -16,7 +16,7 @@ import type {
   GameState,
   LegalMove,
   PlayerState,
-} from './types'
+} from './types.js'
 
 export const FACE_DOWN_COUNT = 3
 export const FACE_UP_COUNT = 3

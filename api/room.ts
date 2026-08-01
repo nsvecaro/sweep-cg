@@ -1,13 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { isValidLobbyCode, normalizeLobbyCode } from '../src/lobby/codes'
+import { isValidLobbyCode, normalizeLobbyCode } from '../src/lobby/codes.js'
 import {
   applyCommand,
   emptyRoom,
   viewOf,
   type RoomCommand,
   type RoomRecord,
-} from '../src/server/room'
-import { Contended, UNCHANGED, create, load, update } from '../src/server/store'
+} from '../src/server/room.js'
+import { Contended, UNCHANGED, create, load, update } from '../src/server/store.js'
 
 /** Opening a table is the one command that has no room to act on yet. */
 type WireCommand = RoomCommand | { type: 'create'; username: string }

@@ -1,8 +1,8 @@
-import { applyAction, createGame } from '../engine/game'
-import type { Card, Difficulty, GameAction, GameEvent, GameState } from '../engine/types'
-import { normalizeLobbyCode } from '../lobby/codes'
-import { randomUsername, sanitizeUsername } from '../lobby/names'
-import { MAX_LOBBY_PLAYERS } from '../lobby/types'
+import { applyAction, createGame } from '../engine/game.js'
+import type { Card, Difficulty, GameAction, GameEvent, GameState } from '../engine/types.js'
+import { normalizeLobbyCode } from '../lobby/codes.js'
+import { randomUsername, sanitizeUsername } from '../lobby/names.js'
+import { MAX_LOBBY_PLAYERS } from '../lobby/types.js'
 
 const LOG_LIMIT = 80
 
