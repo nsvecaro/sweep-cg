@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useRoom } from '@/hooks/useRoom'
-import { LocalTransport } from '@/net/localTransport'
+import { RemoteTransport } from '@/net/remoteTransport'
 import type { RoomSnapshot, SweepTransport } from '@/net/transport'
 import { GameTable } from '@/ui/GameTable'
 import { LobbyRoom } from '@/ui/LobbyRoom'
@@ -8,7 +8,7 @@ import { MainMenu } from '@/ui/MainMenu'
 import { SetupHand } from '@/ui/SetupHand'
 
 export function App({ transport: injected }: { transport?: SweepTransport } = {}) {
-  const [transport] = useState<SweepTransport>(() => injected ?? new LocalTransport())
+  const [transport] = useState<SweepTransport>(() => injected ?? new RemoteTransport())
   const room = useRoom(transport)
   const [error, setError] = useState<string | null>(null)
   const [passedTo, setPassedTo] = useState<string | null>(null)
@@ -23,13 +23,18 @@ export function App({ transport: injected }: { transport?: SweepTransport } = {}
     return () => clearTimeout(timer)
   }, [error])
 
-  const localSeats = room.members.filter((m) => !room.botIds.includes(m.playerId)).map((m) => m.playerId)
+  const localSeats = room.ownedIds
   const viewerId = viewerFor(room, localSeats)
   const needsHandover = localSeats.length > 1 && viewerId !== passedTo && viewerId !== null
   const viewerName = room.members.find((m) => m.playerId === viewerId)?.username ?? 'the next player'
 
   return (
     <>
+      {room.connection === 'offline' && (
+        <div className="toast toast--warn" role="status">
+          Lost the connection — trying again…
+        </div>
+      )}
       {error && (
         <div className="toast" role="status">
           {error}
@@ -56,7 +61,9 @@ function viewerFor(room: RoomSnapshot, localSeats: string[]): string | null {
   const game = room.game
   if (!game) return room.selfId
   if (game.phase === 'setup') {
-    const waiting = game.players.find((p) => localSeats.includes(p.playerId) && p.faceUp.length === 0)
+    const waiting = game.players.find(
+      (p) => localSeats.includes(p.playerId) && !p.hasLeft && p.faceUp.length === 0,
+    )
     return waiting?.playerId ?? room.selfId
   }
   if (game.activePlayerId && localSeats.includes(game.activePlayerId)) return game.activePlayerId

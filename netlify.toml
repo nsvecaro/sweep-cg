@@ -5,6 +5,13 @@
 [build.environment]
   NODE_VERSION = "20.19.4"
 
+# The room API lives in api/ under Vercel's convention and is NOT deployed here.
+# Netlify would need it ported to netlify/functions before lobby codes work
+# across devices; until then /api/* 404s honestly instead of returning HTML.
+[[redirects]]
+  from = "/api/*"
+  status = 404
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

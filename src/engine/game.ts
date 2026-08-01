@@ -42,6 +42,7 @@ export function createGame(config: GameConfig): GameState {
     faceUp: [],
     faceDown: [],
     isFinished: false,
+    hasLeft: false,
   }))
 
   for (let i = 0; i < FACE_DOWN_COUNT; i++) {
@@ -93,7 +94,14 @@ export function applyAction(state: GameState, action: GameAction): ActionResult 
       return playFaceDownCard(state, next, player, action.cardId, events)
     case 'pickUpPile':
       return pickUpPile(state, next, player, events)
+    case 'forfeit':
+      return forfeit(state, next, player, events)
   }
+}
+
+/** Still at the table: neither gone out nor walked away. */
+function isLive(player: PlayerState): boolean {
+  return !player.isFinished && !player.hasLeft
 }
 
 function setFaceUpCards(
@@ -118,10 +126,60 @@ function setFaceUpCards(
   player.faceUp = chosen.sort(byValue)
   events.push({ type: 'PlayerReady', playerId: player.playerId })
 
-  if (next.players.every((p) => p.faceUp.length === FACE_UP_COUNT)) {
-    next.phase = 'playing'
-    next.activePlayerId = chooseStarter(next)
+  maybeStartPlay(next)
+  return { state: next, events, error: null }
+}
+
+/** Setup ends once everyone still seated has shown their three cards. */
+function maybeStartPlay(state: GameState): void {
+  if (state.phase !== 'setup') return
+  const seated = state.players.filter((p) => !p.hasLeft)
+  if (!seated.every((p) => p.faceUp.length === FACE_UP_COUNT)) return
+  state.phase = 'playing'
+  state.activePlayerId = chooseStarter(state)
+}
+
+/**
+ * Walking out mid-game. The leaver's cards go out of play and they rank below
+ * everyone still at the table; when that leaves a single player, they win.
+ */
+function forfeit(
+  prev: GameState,
+  next: GameState,
+  player: PlayerState,
+  events: GameEvent[],
+): ActionResult {
+  if (next.phase === 'finished') return reject(prev, player.playerId, 'The game is over')
+  if (player.hasLeft) return reject(prev, player.playerId, 'You already left the game')
+
+  const wasActive = next.activePlayerId === player.playerId
+  player.hasLeft = true
+  next.graveyard.push(...player.hand, ...player.faceUp, ...player.faceDown)
+  player.hand = []
+  player.faceUp = []
+  player.faceDown = []
+  events.push({ type: 'PlayerLeft', playerId: player.playerId })
+
+  const live = next.players.filter(isLive)
+  if (live.length <= 1) {
+    next.phase = 'finished'
+    next.activePlayerId = null
+    if (live.length === 1) {
+      const winner = live[0]
+      winner.isFinished = true
+      next.finishOrder.push(winner.playerId)
+      events.push({
+        type: 'PlayerFinished',
+        playerId: winner.playerId,
+        place: next.finishOrder.length,
+      })
+    }
+    events.push({ type: 'GameOver', loserId: null, finishOrder: [...next.finishOrder] })
+    return { state: next, events, error: null }
   }
+
+  if (wasActive) advanceTurn(next, 1, events)
+  maybeStartPlay(next)
   return { state: next, events, error: null }
 }
 
@@ -274,7 +332,7 @@ function checkFinished(state: GameState, player: PlayerState, events: GameEvent[
 
 function advanceTurn(state: GameState, steps: number, events: GameEvent[]): void {
   const seats = state.players
-  const live = seats.filter((p) => !p.isFinished)
+  const live = seats.filter(isLive)
   if (live.length === 0) {
     state.activePlayerId = null
     return
@@ -286,7 +344,7 @@ function advanceTurn(state: GameState, steps: number, events: GameEvent[]): void
   let moved = 0
   while (moved < steps) {
     index = (index + 1) % seats.length
-    if (seats[index].isFinished) continue
+    if (!isLive(seats[index])) continue
     moved++
     if (moved < steps) {
       events.push({ type: 'PlayerSkipped', playerId: seats[index].playerId })
@@ -297,7 +355,7 @@ function advanceTurn(state: GameState, steps: number, events: GameEvent[]): void
 }
 
 function settle(state: GameState, events: GameEvent[]): void {
-  const live = state.players.filter((p) => !p.isFinished)
+  const live = state.players.filter(isLive)
   if (live.length > 1) return
   state.phase = 'finished'
   state.activePlayerId = null
@@ -311,6 +369,7 @@ function settle(state: GameState, events: GameEvent[]): void {
 function requireTurn(prev: GameState, next: GameState, player: PlayerState): ActionResult | null {
   if (next.phase === 'setup') return reject(prev, player.playerId, 'Setup is not finished')
   if (next.phase === 'finished') return reject(prev, player.playerId, 'The game is over')
+  if (player.hasLeft) return reject(prev, player.playerId, 'You left the game')
   if (next.activePlayerId !== player.playerId) return reject(prev, player.playerId, 'Not your turn')
   if (player.isFinished) return reject(prev, player.playerId, 'You already went out')
   return null
@@ -340,9 +399,10 @@ function takeCards(source: Card[], cardIds: string[]): Card[] | null {
 }
 
 function chooseStarter(state: GameState): string {
-  let best = state.players[0]
+  const seated = state.players.filter(isLive)
+  let best = seated[0] ?? state.players[0]
   let bestValue = Infinity
-  for (const player of state.players) {
+  for (const player of seated) {
     const low = Math.min(...player.hand.map((c) => c.value))
     if (low < bestValue) {
       bestValue = low
@@ -359,7 +419,7 @@ function byValue(a: Card, b: Card): number {
 export function getLegalMoves(state: GameState, playerId: string): LegalMove[] {
   if (state.phase !== 'playing' || state.activePlayerId !== playerId) return []
   const player = state.players.find((p) => p.playerId === playerId)
-  if (!player || player.isFinished) return []
+  if (!player || !isLive(player)) return []
 
   const zone = playableZone(player)
   if (zone === null) return []

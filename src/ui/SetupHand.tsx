@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { GameState } from '@/engine'
 import type { SweepTransport } from '@/net/transport'
+import { LeaveGame } from './LeaveGame'
 import { PlayingCard } from './PlayingCard'
 import { FACE_UP_COUNT } from '@/engine/game'
 
@@ -27,12 +28,18 @@ export function SetupHand({ transport, game, viewerId, onError }: Props) {
     )
   }
 
-  const confirm = () => {
-    const result = transport.dispatch({ type: 'setFaceUpCards', playerId: viewerId, cardIds: picked })
+  const confirm = async () => {
+    const result = await transport.dispatch({
+      type: 'setFaceUpCards',
+      playerId: viewerId,
+      cardIds: picked,
+    })
     if (!result.ok) return onError(result.error)
     onError(null)
     setPicked([])
   }
+
+  const rivals = game.players.filter((p) => !p.hasLeft && p.playerId !== viewerId).length
 
   if (locked) {
     return (
@@ -47,6 +54,7 @@ export function SetupHand({ transport, game, viewerId, onError }: Props) {
             <PlayingCard key={card.id} card={card} />
           ))}
         </div>
+        <LeaveGame transport={transport} rivals={rivals} />
       </main>
     )
   }
@@ -73,13 +81,20 @@ export function SetupHand({ transport, game, viewerId, onError }: Props) {
         ))}
       </div>
 
-      <button type="button" className="btn btn--primary btn--wide" disabled={picked.length !== FACE_UP_COUNT} onClick={confirm}>
+      <button
+        type="button"
+        className="btn btn--primary btn--wide"
+        disabled={picked.length !== FACE_UP_COUNT}
+        onClick={() => void confirm()}
+      >
         {picked.length === FACE_UP_COUNT ? 'Lock them in' : `Pick ${FACE_UP_COUNT - picked.length} more`}
       </button>
 
       {waiting.length > 0 && (
         <p className="hint hint--center">Waiting on {waiting.map((p) => p.name).join(', ')}.</p>
       )}
+
+      <LeaveGame transport={transport} rivals={rivals} />
     </main>
   )
 }

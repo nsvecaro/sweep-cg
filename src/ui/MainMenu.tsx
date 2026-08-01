@@ -19,12 +19,19 @@ interface Props {
 export function MainMenu({ transport, onError }: Props) {
   const [name, setName] = useState(() => randomUsername())
   const [code, setCode] = useState('')
+  const [busy, setBusy] = useState(false)
 
-  const withName = (then: () => Result<unknown>) => {
-    const named = transport.setUsername(name, false)
-    if (!named.ok) return onError(named.error)
-    const result = then()
-    onError(result.ok ? null : result.error)
+  const withName = async (then: () => Promise<Result<unknown>>) => {
+    if (busy) return
+    setBusy(true)
+    try {
+      const named = await transport.setUsername(name, false)
+      if (!named.ok) return onError(named.error)
+      const result = await then()
+      onError(result.ok ? null : result.error)
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -61,8 +68,13 @@ export function MainMenu({ transport, onError }: Props) {
         </label>
 
         <div className="menu__actions">
-          <button type="button" className="btn btn--primary" onClick={() => withName(() => transport.createLobby())}>
-            Host a table
+          <button
+            type="button"
+            className="btn btn--primary"
+            disabled={busy}
+            onClick={() => void withName(() => transport.createLobby())}
+          >
+            {busy ? 'Just a moment…' : 'Host a table'}
           </button>
 
           <div className="menu__join">
@@ -78,8 +90,8 @@ export function MainMenu({ transport, onError }: Props) {
             <button
               type="button"
               className="btn"
-              disabled={code.length < LOBBY_CODE_LENGTH}
-              onClick={() => withName(() => transport.joinLobby(code))}
+              disabled={busy || code.length < LOBBY_CODE_LENGTH}
+              onClick={() => void withName(() => transport.joinLobby(code))}
             >
               Join
             </button>

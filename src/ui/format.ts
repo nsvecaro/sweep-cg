@@ -62,6 +62,8 @@ export function describeEvent(event: GameEvent, nameOf: (id: string) => string):
       return `${nameOf(event.playerId)} was skipped`
     case 'PlayerFinished':
       return `${nameOf(event.playerId)} is out — place ${event.place}`
+    case 'PlayerLeft':
+      return `${nameOf(event.playerId)} left the game`
     case 'GameOver':
       return event.loserId ? `${nameOf(event.loserId)} is left holding the cards` : 'Game over'
     case 'PlayRejected':

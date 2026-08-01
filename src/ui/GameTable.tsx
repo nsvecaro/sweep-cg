@@ -8,6 +8,7 @@ import {
   type PlayerState,
 } from '@/engine'
 import type { RoomSnapshot, SweepTransport } from '@/net/transport'
+import { LeaveGame } from './LeaveGame'
 import { CardBack, EmptySlot, PlayingCard } from './PlayingCard'
 import { PlayLog } from './PlayLog'
 import { Result } from './Result'
@@ -57,11 +58,14 @@ export function GameTable({ transport, room, game, viewerId, onError }: Props) {
     })
   }
 
-  const send = (result: { ok: true } | { ok: false; error: string }) => onError(result.ok ? null : result.error)
+  const send = async (command: Promise<{ ok: true } | { ok: false; error: string }>) => {
+    const result = await command
+    onError(result.ok ? null : result.error)
+  }
 
   const throwCards = () => {
     if (chosen.length === 0) return
-    send(transport.dispatch({ type: 'playCards', playerId: viewerId, cardIds: chosen }))
+    void send(transport.dispatch({ type: 'playCards', playerId: viewerId, cardIds: chosen }))
   }
 
   const chosenValue = chosen.length > 0 ? owned.find((c) => c.id === chosen[0])?.value : undefined
@@ -74,9 +78,7 @@ export function GameTable({ transport, room, game, viewerId, onError }: Props) {
           <span className="rail__code">{room.lobby?.code}</span>
           <span className="rail__mode">{game.difficulty}</span>
         </span>
-        <button type="button" className="btn btn--tiny" onClick={() => send(transport.returnToLobby())}>
-          End game
-        </button>
+        <LeaveGame transport={transport} rivals={game.players.filter((p) => !p.isFinished && !p.hasLeft && p.playerId !== viewerId).length} />
       </header>
 
       <section className="opponents" aria-label="Other players">
@@ -130,7 +132,7 @@ export function GameTable({ transport, room, game, viewerId, onError }: Props) {
                     key={card.id}
                     type="button"
                     className="card card--back card--tappable"
-                    onClick={() => send(transport.dispatch({ type: 'playFaceDownCard', playerId: viewerId, cardId: card.id }))}
+                    onClick={() => void send(transport.dispatch({ type: 'playFaceDownCard', playerId: viewerId, cardId: card.id }))}
                   >
                     <span className="card__count">Flip</span>
                   </button>
@@ -181,7 +183,7 @@ export function GameTable({ transport, room, game, viewerId, onError }: Props) {
             type="button"
             className="btn btn--danger"
             disabled={!canTakePile}
-            onClick={() => send(transport.dispatch({ type: 'pickUpPile', playerId: viewerId }))}
+            onClick={() => void send(transport.dispatch({ type: 'pickUpPile', playerId: viewerId }))}
           >
             Take the pile{game.pile.length > 0 ? ` (${game.pile.length})` : ''}
           </button>
@@ -190,7 +192,7 @@ export function GameTable({ transport, room, game, viewerId, onError }: Props) {
       </section>
 
       <PlayLog room={room} game={game} />
-      {game.phase === 'finished' && <Result game={game} onDone={() => send(transport.returnToLobby())} />}
+      {game.phase === 'finished' && <Result game={game} onDone={() => void send(transport.returnToLobby())} />}
     </main>
   )
 }

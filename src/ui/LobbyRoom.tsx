@@ -21,6 +21,12 @@ export function LobbyRoom({ transport, room, onError }: Props) {
   const lobby = room.lobby!
   const isHost = lobby.hostId === room.selfId
   const full = room.members.length >= MAX_LOBBY_PLAYERS
+  const online = transport.kind === 'remote'
+
+  const run = async (command: Promise<{ ok: true } | { ok: false; error: string }>) => {
+    const result = await command
+    onError(result.ok ? null : result.error)
+  }
 
   const copyCode = async () => {
     try {
@@ -36,7 +42,7 @@ export function LobbyRoom({ transport, room, onError }: Props) {
     <main className="screen lobby">
       <header className="lobby__head">
         <h1 className="wordmark wordmark--small">Sweep</h1>
-        <button type="button" className="btn btn--ghost" onClick={() => transport.leave()}>
+        <button type="button" className="btn btn--ghost" onClick={() => void transport.leave()}>
           Leave table
         </button>
       </header>
@@ -66,7 +72,7 @@ export function LobbyRoom({ transport, room, onError }: Props) {
                 <button
                   type="button"
                   className="btn btn--tiny"
-                  onClick={() => onError(fail(transport.removePlayer(member.playerId)))}
+                  onClick={() => void run(transport.removePlayer(member.playerId))}
                 >
                   Remove
                 </button>
@@ -76,14 +82,21 @@ export function LobbyRoom({ transport, room, onError }: Props) {
         </ul>
         {isHost && (
           <div className="lobby__fill">
-            <button type="button" className="btn btn--ghost" disabled={full} onClick={() => onError(fail(transport.addBot()))}>
-              Add a bot
-            </button>
+            {!online && (
+              <button
+                type="button"
+                className="btn btn--ghost"
+                disabled={full}
+                onClick={() => void run(transport.addBot())}
+              >
+                Add a bot
+              </button>
+            )}
             <button
               type="button"
               className="btn btn--ghost"
               disabled={full}
-              onClick={() => onError(fail(transport.addLocalPlayer('')))}
+              onClick={() => void run(transport.addLocalPlayer(''))}
             >
               Add a seat on this device
             </button>
@@ -112,9 +125,13 @@ export function LobbyRoom({ transport, room, onError }: Props) {
             type="button"
             className="btn btn--primary btn--wide"
             disabled={room.members.length < 2}
-            onClick={() => onError(fail(transport.startGame(difficulty)))}
+            onClick={() => void run(transport.startGame(difficulty))}
           >
-            {room.members.length < 2 ? 'Add another player to start' : 'Deal'}
+            {room.members.length < 2
+              ? online
+                ? 'Waiting for a friend to join'
+                : 'Add another player to start'
+              : 'Deal'}
           </button>
         </section>
       )}
@@ -122,8 +139,4 @@ export function LobbyRoom({ transport, room, onError }: Props) {
       {!isHost && <p className="hint hint--center">Waiting for the host to deal.</p>}
     </main>
   )
-}
-
-function fail(result: { ok: true } | { ok: false; error: string }): string | null {
-  return result.ok ? null : result.error
 }

@@ -23,6 +23,7 @@ export interface SeatSpec {
   faceUp?: string[]
   faceDown?: string[]
   isFinished?: boolean
+  hasLeft?: boolean
 }
 
 export interface StateSpec {
@@ -47,6 +48,7 @@ export function stateOf(spec: StateSpec): GameState {
     faceUp: cards(...(seat.faceUp ?? [])),
     faceDown: cards(...(seat.faceDown ?? [])),
     isFinished: seat.isFinished ?? false,
+    hasLeft: seat.hasLeft ?? false,
   }))
 
   const pile = cards(...(spec.pile ?? []))

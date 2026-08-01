@@ -27,6 +27,7 @@ export class LocalTransport implements SweepTransport {
   private lobbyService = new LobbyService()
   private code: string | null = null
   private botIds = new Set<string>()
+  private ownedIds = new Set<string>([this.selfId])
   private game: GameState | null = null
   private log: LogEntry[] = []
   private logSeq = 0
@@ -39,6 +40,7 @@ export class LocalTransport implements SweepTransport {
       lobby: this.code ? (this.lobbyService.getLobby(this.code) ?? null) : null,
       members: this.code ? this.lobbyService.membersOf(this.code) : [],
       botIds: [...this.botIds],
+      ownedIds: [...this.ownedIds],
       game: this.game,
       log: this.log,
     }
@@ -55,13 +57,13 @@ export class LocalTransport implements SweepTransport {
     for (const listener of this.listeners) listener(snapshot)
   }
 
-  setUsername(username: string, isRandomized: boolean): Result<PlayerProfile> {
+  async setUsername(username: string, isRandomized: boolean): Promise<Result<PlayerProfile>> {
     const result = this.lobbyService.setUsername(this.selfId, username, isRandomized)
     if (result.ok) this.publish()
     return result
   }
 
-  createLobby(): Result<Lobby> {
+  async createLobby(): Promise<Result<Lobby>> {
     const result = this.lobbyService.createLobby(this.selfId)
     if (result.ok) {
       this.code = result.value.code
@@ -70,7 +72,7 @@ export class LocalTransport implements SweepTransport {
     return result
   }
 
-  joinLobby(code: string): Result<Lobby> {
+  async joinLobby(code: string): Promise<Result<Lobby>> {
     const result = this.lobbyService.joinLobby(code, this.selfId)
     if (result.ok) {
       this.code = result.value.code
@@ -79,14 +81,14 @@ export class LocalTransport implements SweepTransport {
     return result
   }
 
-  addBot(): Result<PlayerProfile> {
+  async addBot(): Promise<Result<PlayerProfile>> {
     const seat = this.addSeat(`${randomUsername()}`)
     if (seat.ok) this.botIds.add(seat.value.playerId)
     this.publish()
     return seat
   }
 
-  addLocalPlayer(username: string): Result<PlayerProfile> {
+  async addLocalPlayer(username: string): Promise<Result<PlayerProfile>> {
     const seat = this.addSeat(username || randomUsername())
     this.publish()
     return seat
@@ -101,21 +103,23 @@ export class LocalTransport implements SweepTransport {
     this.lobbyService.registerProfile({ playerId, username })
     const joined = this.lobbyService.joinLobby(lobby.value.code, playerId)
     if (!joined.ok) return fail(joined.error)
+    this.ownedIds.add(playerId)
     return ok({ playerId, username })
   }
 
-  removePlayer(playerId: string): Result<null> {
+  async removePlayer(playerId: string): Promise<Result<null>> {
     const lobby = this.requireLobby()
     if (!lobby.ok) return fail(lobby.error)
     if (playerId === this.selfId) return fail('You cannot remove yourself')
     const result = this.lobbyService.leaveLobby(lobby.value.code, playerId)
     if (!result.ok) return fail(result.error)
     this.botIds.delete(playerId)
+    this.ownedIds.delete(playerId)
     this.publish()
     return ok(null)
   }
 
-  startGame(difficulty: Difficulty): Result<null> {
+  async startGame(difficulty: Difficulty): Promise<Result<null>> {
     const lobby = this.requireLobby()
     if (!lobby.ok) return fail(lobby.error)
     if (lobby.value.playerIds.length < 2) return fail('Sweep needs at least two players')
@@ -135,7 +139,11 @@ export class LocalTransport implements SweepTransport {
     return ok(null)
   }
 
-  dispatch(action: GameAction): Result<null> {
+  async dispatch(action: GameAction): Promise<Result<null>> {
+    return this.applyLocally(action)
+  }
+
+  private applyLocally(action: GameAction): Result<null> {
     if (!this.game) return fail('No game in progress')
     const result = applyAction(this.game, action)
     if (result.error) return fail(result.error)
@@ -146,7 +154,7 @@ export class LocalTransport implements SweepTransport {
     return ok(null)
   }
 
-  returnToLobby(): Result<null> {
+  async returnToLobby(): Promise<Result<null>> {
     const lobby = this.requireLobby()
     if (!lobby.ok) return fail(lobby.error)
     this.clearBotTimer()
@@ -157,13 +165,17 @@ export class LocalTransport implements SweepTransport {
     return ok(null)
   }
 
-  leave(): void {
+  async leave(): Promise<void> {
+    if (this.game && this.game.phase !== 'finished') {
+      this.applyLocally({ type: 'forfeit', playerId: this.selfId })
+    }
     this.clearBotTimer()
     if (this.code) this.lobbyService.leaveLobby(this.code, this.selfId)
     this.code = null
     this.game = null
     this.log = []
     this.botIds.clear()
+    this.ownedIds = new Set([this.selfId])
     this.publish()
   }
 
@@ -191,7 +203,7 @@ export class LocalTransport implements SweepTransport {
     this.botTimer = setTimeout(() => {
       this.botTimer = null
       const current = this.pendingBotAction()
-      if (current) this.dispatch(current)
+      if (current) this.applyLocally(current)
     }, BOT_DELAY_MS)
   }
 

@@ -11,28 +11,33 @@ export interface RoomSnapshot {
   lobby: Lobby | null
   members: PlayerProfile[]
   botIds: string[]
+  /** Seats this browser plays: yourself plus any pass-and-play seats you added. */
+  ownedIds: string[]
   game: GameState | null
   log: LogEntry[]
+  /** Set when the room is unreachable; the UI shows it instead of the table. */
+  connection?: 'online' | 'offline'
 }
 
 /**
  * Everything the UI is allowed to know about where the game is running.
- * The local implementation keeps state in memory; a networked one would
- * satisfy the same shape over a socket with an authoritative server.
+ * Commands are asynchronous because a networked room answers over the wire;
+ * snapshots stay synchronous and arrive by subscription either way.
  */
 export interface SweepTransport {
   readonly kind: 'local' | 'remote'
   readonly selfId: string
   snapshot(): RoomSnapshot
   subscribe(listener: (snapshot: RoomSnapshot) => void): () => void
-  setUsername(username: string, isRandomized: boolean): Result<PlayerProfile>
-  createLobby(): Result<Lobby>
-  joinLobby(code: string): Result<Lobby>
-  addBot(): Result<PlayerProfile>
-  addLocalPlayer(username: string): Result<PlayerProfile>
-  removePlayer(playerId: string): Result<null>
-  startGame(difficulty: Difficulty): Result<null>
-  dispatch(action: GameAction): Result<null>
-  returnToLobby(): Result<null>
-  leave(): void
+  setUsername(username: string, isRandomized: boolean): Promise<Result<PlayerProfile>>
+  createLobby(): Promise<Result<Lobby>>
+  joinLobby(code: string): Promise<Result<Lobby>>
+  addBot(): Promise<Result<PlayerProfile>>
+  addLocalPlayer(username: string): Promise<Result<PlayerProfile>>
+  removePlayer(playerId: string): Promise<Result<null>>
+  startGame(difficulty: Difficulty): Promise<Result<null>>
+  dispatch(action: GameAction): Promise<Result<null>>
+  returnToLobby(): Promise<Result<null>>
+  /** Forfeits any game in progress, then drops the seat from the room. */
+  leave(): Promise<void>
 }

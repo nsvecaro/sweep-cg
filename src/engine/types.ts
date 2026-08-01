@@ -20,6 +20,8 @@ export interface PlayerState {
   faceUp: Card[]
   faceDown: Card[]
   isFinished: boolean
+  /** Walked out mid-game. Holds no turn and ranks below everyone still playing. */
+  hasLeft: boolean
 }
 
 export interface GameState {
@@ -43,6 +45,7 @@ export type GameAction =
   | { type: 'playCards'; playerId: string; cardIds: string[] }
   | { type: 'playFaceDownCard'; playerId: string; cardId: string }
   | { type: 'pickUpPile'; playerId: string }
+  | { type: 'forfeit'; playerId: string }
 
 export type GameEvent =
   | { type: 'PlayerReady'; playerId: string }
@@ -53,6 +56,7 @@ export type GameEvent =
   | { type: 'CardsDrawn'; playerId: string; count: number }
   | { type: 'PlayerSkipped'; playerId: string }
   | { type: 'PlayerFinished'; playerId: string; place: number }
+  | { type: 'PlayerLeft'; playerId: string }
   | { type: 'GameOver'; loserId: string | null; finishOrder: string[] }
 
 export interface ActionResult {

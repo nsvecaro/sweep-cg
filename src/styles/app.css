@@ -805,6 +805,16 @@ input::placeholder {
   gap: 16px;
 }
 
+.overlay__actions {
+  display: flex;
+  gap: 10px;
+}
+
+.overlay__actions .btn {
+  flex: 1;
+  justify-content: center;
+}
+
 .places {
   list-style: none;
   margin: 0;
@@ -852,6 +862,13 @@ input::placeholder {
   border-radius: 999px;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
   animation: drop 0.2s var(--lift);
+}
+
+.toast--warn {
+  top: auto;
+  bottom: 16px;
+  background: var(--rouge);
+  color: var(--bone);
 }
 
 @keyframes drop {
