@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   RANK_LABEL,
   TURN_MS,
   getLegalMoves,
   playableZone,
   type Card,
+  type GameEvent,
   type GameState,
   type PlayerState,
 } from '@/engine'
@@ -21,7 +22,38 @@ interface Announce {
   text: string
 }
 
+interface Flight {
+  id: string
+  card: Card | null
+  x0: number
+  y0: number
+  x1: number
+  y1: number
+  delay: number
+  r0: number
+  r1: number
+}
+
 const SPARKS = Array.from({ length: 8 }, (_, i) => i)
+
+/** Kept in step with the `flightMove` CSS animation's own duration. */
+const FLIGHT_MS = 620
+const PLAY_STAGGER_MS = 70
+const PICKUP_STAGGER_MS = 45
+const MAX_PICKUP_GHOSTS = 8
+
+function centerOf(el: Element | null | undefined): { x: number; y: number } | null {
+  if (!el) return null
+  const r = el.getBoundingClientRect()
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+}
+
+/** A pickup's individual cards aren't in the event — scatter the backs deterministically instead. */
+function scatterSeed(n: number) {
+  let hash = (n + 1) * 2654435761
+  hash = (hash ^ (hash >>> 15)) >>> 0
+  return hash
+}
 
 interface Props {
   transport: SweepTransport
@@ -29,14 +61,72 @@ interface Props {
   game: GameState
   viewerId: string
   onError: (message: string | null) => void
+  /** Set once, on a fresh mount, to replay a past play/pickup for a player who just took the device. */
+  replayLogId?: number | null
+  onReplayConsumed?: () => void
 }
 
-export function GameTable({ transport, room, game, viewerId, onError }: Props) {
+export function GameTable({ transport, room, game, viewerId, onError, replayLogId = null, onReplayConsumed }: Props) {
   const [selected, setSelected] = useState<string[]>([])
   const [flash, setFlash] = useState(false)
   const [announce, setAnnounce] = useState<Announce | null>(null)
+  const [flights, setFlights] = useState<Flight[]>([])
   const lastLogId = useRef(-1)
   const seenLog = useRef(false)
+  const flightSeq = useRef(0)
+  const pileRef = useRef<HTMLDivElement>(null)
+  const nameRefs = useRef<Map<string, Element>>(new Map())
+  const nameRefCallbacks = useRef<Map<string, (el: Element | null) => void>>(new Map())
+
+  /** Stable per-id ref callback — an inline closure here would detach/reattach every render (the 250ms clock tick included). */
+  const registerName = useCallback((id: string) => {
+    let cb = nameRefCallbacks.current.get(id)
+    if (!cb) {
+      cb = (el: Element | null) => {
+        if (el) nameRefs.current.set(id, el)
+        else nameRefs.current.delete(id)
+      }
+      nameRefCallbacks.current.set(id, cb)
+    }
+    return cb
+  }, [])
+
+  const spawnFlight = (playerId: string, direction: 'toPile' | 'fromPile', cards: Card[] | null, count: number) => {
+    const pile = centerOf(pileRef.current)
+    const seat = centerOf(nameRefs.current.get(playerId))
+    if (!pile || !seat) return
+
+    const shown: (Card | null)[] = cards ?? Array.from({ length: Math.min(count, MAX_PICKUP_GHOSTS) }, () => null)
+    const stagger = direction === 'toPile' ? PLAY_STAGGER_MS : PICKUP_STAGGER_MS
+    const from = direction === 'toPile' ? seat : pile
+    const to = direction === 'toPile' ? pile : seat
+
+    const spawned: Flight[] = shown.map((card, i) => {
+      const seed = card ? hashCardId(card.id) : scatterSeed(flightSeq.current + i)
+      return {
+        id: `flight-${flightSeq.current++}`,
+        card,
+        x0: from.x,
+        y0: from.y,
+        x1: to.x + ((seed % 13) - 6),
+        y1: to.y + (((seed >> 4) % 13) - 6),
+        delay: i * stagger,
+        r0: (seed % 17) - 8,
+        r1: ((seed >> 5) % 17) - 8,
+      }
+    })
+
+    setFlights((prev) => [...prev, ...spawned])
+    const life = FLIGHT_MS + spawned.length * stagger
+    window.setTimeout(() => {
+      setFlights((prev) => prev.filter((f) => !spawned.some((s) => s.id === f.id)))
+    }, life)
+  }
+
+  const spawnFlightForEvent = (event: GameEvent) => {
+    if (event.type === 'CardsPlayed') spawnFlight(event.playerId, 'toPile', event.cards, event.cards.length)
+    else if (event.type === 'PileTaken') spawnFlight(event.playerId, 'fromPile', null, event.count)
+  }
 
   const viewer = game.players.find((p) => p.playerId === viewerId)!
   const opponents = game.players.filter((p) => p.playerId !== viewerId)
@@ -69,6 +159,7 @@ export function GameTable({ transport, room, game, viewerId, onError }: Props) {
 
     for (const entry of fresh) {
       const event = entry.event
+      spawnFlightForEvent(event)
       if (event.type === 'CardsPlayed') {
         const text = burstLabel(event.cards.length)
         if (text) setAnnounce({ key: entry.id, kind: 'burst', text })
@@ -85,6 +176,15 @@ export function GameTable({ transport, room, game, viewerId, onError }: Props) {
     const timer = setTimeout(() => setAnnounce(null), announce.kind === 'sweep' ? 1700 : announce.kind === 'timeout' ? 1400 : 950)
     return () => clearTimeout(timer)
   }, [announce])
+
+  useEffect(() => {
+    if (replayLogId == null) return
+    const entry = room.log.find((e) => e.id === replayLogId)
+    if (entry) spawnFlightForEvent(entry.event)
+    onReplayConsumed?.()
+    // Fires once per replayLogId the parent hands us — not a dependency loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [replayLogId])
 
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -141,6 +241,7 @@ export function GameTable({ transport, room, game, viewerId, onError }: Props) {
             player={player}
             active={game.activePlayerId === player.playerId}
             secondsLeft={game.activePlayerId === player.playerId ? secondsLeft : null}
+            nameRef={registerName(player.playerId)}
           />
         ))}
       </section>
@@ -158,7 +259,7 @@ export function GameTable({ transport, room, game, viewerId, onError }: Props) {
 
         <div className="board__row">
           <Stack label="Deck" count={game.deck.length} />
-          <div className="pile">
+          <div className="pile" ref={pileRef}>
             {announce?.kind === 'burst' && (
               <span key={announce.key} className="pile__burst" aria-hidden="true">
                 {SPARKS.map((i) => (
@@ -198,7 +299,7 @@ export function GameTable({ transport, room, game, viewerId, onError }: Props) {
 
       <section className={`you ${isMyTurn ? 'you--active' : ''}`}>
         <div className="you__head">
-          <span className="you__name">{viewer.name}</span>
+          <span className="you__name" ref={registerName(viewerId)}>{viewer.name}</span>
           <span className="you__meta">
             {isMyTurn && secondsLeft !== null && <Clock seconds={secondsLeft} />}
             <span className="you__turn">{isMyTurn ? 'You’re up' : `${nameOf(game, game.activePlayerId)} is thinking`}</span>
@@ -276,6 +377,28 @@ export function GameTable({ transport, room, game, viewerId, onError }: Props) {
 
       <PlayLog room={room} game={game} />
       {game.phase === 'finished' && <Result game={game} onDone={() => void send(transport.returnToLobby())} />}
+
+      <div className="flight-layer" aria-hidden="true">
+        {flights.map((f) => (
+          <div
+            key={f.id}
+            className="flight"
+            style={
+              {
+                '--x0': f.x0,
+                '--y0': f.y0,
+                '--x1': f.x1,
+                '--y1': f.y1,
+                '--r0': `${f.r0}deg`,
+                '--r1': `${f.r1}deg`,
+                animationDelay: `${f.delay}ms`,
+              } as React.CSSProperties
+            }
+          >
+            {f.card ? <PlayingCard card={f.card} scale={0.6} /> : <CardBack scale={0.6} />}
+          </div>
+        ))}
+      </div>
     </main>
   )
 }
@@ -322,16 +445,18 @@ function OpponentSeat({
   player,
   active,
   secondsLeft,
+  nameRef,
 }: {
   player: PlayerState
   active: boolean
   secondsLeft: number | null
+  nameRef: (el: Element | null) => void
 }) {
   const slots = tableSlotsFor(player)
   return (
     <article className={`seat ${active ? 'seat--active' : ''} ${player.isFinished ? 'seat--out' : ''}`}>
       <header className="seat__head">
-        <span className="seat__name">{player.name}</span>
+        <span className="seat__name" ref={nameRef}>{player.name}</span>
         <span className="seat__meta">
           {secondsLeft !== null && <Clock seconds={secondsLeft} />}
           {player.isFinished ? <span className="tag">Out</span> : <span className="seat__hand">{player.hand.length}</span>}
