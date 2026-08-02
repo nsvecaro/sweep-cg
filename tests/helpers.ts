@@ -36,6 +36,7 @@ export interface StateSpec {
   forceLower?: boolean
   activePlayerId?: string
   phase?: GameState['phase']
+  turnEndsAt?: number | null
 }
 
 /** Builds an exact board. Any card not named goes back to the deck. */
@@ -74,6 +75,7 @@ export function stateOf(spec: StateSpec): GameState {
     turn: 0,
     rng: 1,
     lastReveal: null,
+    turnEndsAt: spec.turnEndsAt ?? null,
   }
 }
 

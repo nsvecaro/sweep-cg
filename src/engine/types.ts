@@ -38,6 +38,8 @@ export interface GameState {
   turn: number
   rng: number
   lastReveal: Card | null
+  /** Wall-clock deadline for the active player's move; null off-turn (setup/finished). */
+  turnEndsAt: number | null
 }
 
 export type GameAction =
@@ -46,6 +48,8 @@ export type GameAction =
   | { type: 'playFaceDownCard'; playerId: string; cardId: string }
   | { type: 'pickUpPile'; playerId: string }
   | { type: 'forfeit'; playerId: string }
+  /** Server-only: the room enforces this once turnEndsAt passes, never a client command. */
+  | { type: 'timeout'; playerId: string }
 
 export type GameEvent =
   | { type: 'PlayerReady'; playerId: string }
@@ -57,6 +61,7 @@ export type GameEvent =
   | { type: 'PlayerSkipped'; playerId: string }
   | { type: 'PlayerFinished'; playerId: string; place: number }
   | { type: 'PlayerLeft'; playerId: string }
+  | { type: 'PlayerTimedOut'; playerId: string }
   | { type: 'GameOver'; loserId: string | null; finishOrder: string[] }
 
 export interface ActionResult {

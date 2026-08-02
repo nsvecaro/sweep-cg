@@ -481,6 +481,37 @@ input::placeholder {
   margin-bottom: 8px;
 }
 
+.seat__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.clock {
+  font-family: var(--font-pixel);
+  font-size: 0.6rem;
+  color: var(--cool);
+  border: 1px solid var(--line);
+  border-radius: 0;
+  min-width: 26px;
+  text-align: center;
+  padding: 3px 5px;
+  letter-spacing: 0.02em;
+}
+
+.clock--urgent {
+  color: var(--void);
+  background: var(--warn);
+  border-color: var(--warn);
+  animation: clockPulse 0.5s steps(2, jump-none) infinite;
+}
+
+@keyframes clockPulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+
 .seat__name {
   font-weight: 600;
   font-size: 0.9rem;
@@ -751,6 +782,28 @@ input::placeholder {
   }
 }
 
+.demand__headline--timeout {
+  color: var(--warn);
+  animation: timeoutShake 0.4s steps(2, jump-none) 2;
+}
+
+@keyframes timeoutShake {
+  0%,
+  100% {
+    transform: translateX(0);
+    text-shadow:
+      2px 0 0 rgba(255, 47, 176, 0.35),
+      -2px 0 0 rgba(41, 224, 255, 0.3),
+      0 0 34px rgba(255, 90, 31, 0.3);
+  }
+  25% {
+    transform: translateX(-6px);
+  }
+  75% {
+    transform: translateX(6px);
+  }
+}
+
 /* ---- your rail ---- */
 
 .you {
@@ -773,7 +826,7 @@ input::placeholder {
 
 .you__head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
@@ -782,6 +835,12 @@ input::placeholder {
   font-family: var(--font-display);
   font-weight: 700;
   text-transform: uppercase;
+}
+
+.you__meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .you__turn {

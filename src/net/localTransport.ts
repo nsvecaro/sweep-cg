@@ -33,6 +33,7 @@ export class LocalTransport implements SweepTransport {
   private logSeq = 0
   private listeners = new Set<(snapshot: RoomSnapshot) => void>()
   private botTimer: ReturnType<typeof setTimeout> | null = null
+  private timeoutTimer: ReturnType<typeof setTimeout> | null = null
 
   snapshot(): RoomSnapshot {
     return {
@@ -136,6 +137,7 @@ export class LocalTransport implements SweepTransport {
     this.log = []
     this.publish()
     this.scheduleBot()
+    this.scheduleTimeout()
     return ok(null)
   }
 
@@ -151,6 +153,7 @@ export class LocalTransport implements SweepTransport {
     this.record(result.events)
     this.publish()
     this.scheduleBot()
+    this.scheduleTimeout()
     return ok(null)
   }
 
@@ -158,6 +161,7 @@ export class LocalTransport implements SweepTransport {
     const lobby = this.requireLobby()
     if (!lobby.ok) return fail(lobby.error)
     this.clearBotTimer()
+    this.clearTimeoutTimer()
     this.game = null
     this.log = []
     this.lobbyService.setStatus(lobby.value.code, 'waiting')
@@ -170,6 +174,7 @@ export class LocalTransport implements SweepTransport {
       this.applyLocally({ type: 'forfeit', playerId: this.selfId })
     }
     this.clearBotTimer()
+    this.clearTimeoutTimer()
     if (this.code) this.lobbyService.leaveLobby(this.code, this.selfId)
     this.code = null
     this.game = null
@@ -194,6 +199,30 @@ export class LocalTransport implements SweepTransport {
   private clearBotTimer(): void {
     if (this.botTimer !== null) clearTimeout(this.botTimer)
     this.botTimer = null
+  }
+
+  private clearTimeoutTimer(): void {
+    if (this.timeoutTimer !== null) clearTimeout(this.timeoutTimer)
+    this.timeoutTimer = null
+  }
+
+  /**
+   * No server here to enforce the clock lazily — this device owns the whole
+   * game, so it fires the punishment itself once the deadline passes.
+   */
+  private scheduleTimeout(): void {
+    this.clearTimeoutTimer()
+    const game = this.game
+    if (!game || game.phase !== 'playing' || !game.activePlayerId || game.turnEndsAt === null) return
+
+    const activePlayerId = game.activePlayerId
+    const turn = game.turn
+    const wait = Math.max(0, game.turnEndsAt - Date.now())
+    this.timeoutTimer = setTimeout(() => {
+      this.timeoutTimer = null
+      if (!this.game || this.game.turn !== turn || this.game.activePlayerId !== activePlayerId) return
+      this.applyLocally({ type: 'timeout', playerId: activePlayerId })
+    }, wait)
   }
 
   private scheduleBot(): void {

@@ -20,15 +20,18 @@ import type {
 
 export const FACE_DOWN_COUNT = 3
 export const FACE_UP_COUNT = 3
+export const TURN_SECONDS = 20
+export const TURN_MS = TURN_SECONDS * 1000
 
 export interface GameConfig {
   difficulty: Difficulty
   players: { playerId: string; name: string; isBot?: boolean }[]
   seed?: number
+  now?: number
 }
 
 export function createGame(config: GameConfig): GameState {
-  const { difficulty, players, seed = Date.now() } = config
+  const { difficulty, players, seed = Date.now(), now = Date.now() } = config
   if (players.length < 2) throw new Error('Sweep needs at least two players')
 
   const [deck, rng] = shuffle(buildDeck(), seed | 0)
@@ -72,12 +75,21 @@ export function createGame(config: GameConfig): GameState {
     turn: 0,
     rng,
     lastReveal: null,
+    turnEndsAt: null,
   }
-  if (state.phase === 'playing') state.activePlayerId = chooseStarter(state)
+  if (state.phase === 'playing') {
+    state.activePlayerId = chooseStarter(state)
+    state.turnEndsAt = now + TURN_MS
+  }
   return state
 }
 
-export function applyAction(state: GameState, action: GameAction): ActionResult {
+/**
+ * Every action funnels back through here, so the clock resets on the tail
+ * state rather than at each `advanceTurn` call site — that also covers a
+ * sweep, which keeps the same player on the clock instead of passing turn.
+ */
+export function applyAction(state: GameState, action: GameAction, now: number = Date.now()): ActionResult {
   const next = structuredClone(state)
   const events: GameEvent[] = []
   next.lastReveal = null
@@ -85,17 +97,34 @@ export function applyAction(state: GameState, action: GameAction): ActionResult 
   const player = next.players.find((p) => p.playerId === action.playerId)
   if (!player) return reject(state, action.playerId, 'Unknown player')
 
+  const result = dispatch(state, next, player, action, events)
+  if (result.error) return result
+
+  result.state.turnEndsAt =
+    result.state.phase === 'playing' && result.state.activePlayerId !== null ? now + TURN_MS : null
+  return result
+}
+
+function dispatch(
+  prev: GameState,
+  next: GameState,
+  player: PlayerState,
+  action: GameAction,
+  events: GameEvent[],
+): ActionResult {
   switch (action.type) {
     case 'setFaceUpCards':
-      return setFaceUpCards(state, next, player, action.cardIds, events)
+      return setFaceUpCards(prev, next, player, action.cardIds, events)
     case 'playCards':
-      return playCards(state, next, player, action.cardIds, events)
+      return playCards(prev, next, player, action.cardIds, events)
     case 'playFaceDownCard':
-      return playFaceDownCard(state, next, player, action.cardId, events)
+      return playFaceDownCard(prev, next, player, action.cardId, events)
     case 'pickUpPile':
-      return pickUpPile(state, next, player, events)
+      return pickUpPile(prev, next, player, events)
     case 'forfeit':
-      return forfeit(state, next, player, events)
+      return forfeit(prev, next, player, events)
+    case 'timeout':
+      return timeout(prev, next, player, events)
   }
 }
 
@@ -274,6 +303,37 @@ function pickUpPile(
   next.pile = []
   clearBoard(next)
   events.push({ type: 'PileTaken', playerId: player.playerId, count })
+  advanceTurn(next, 1, events)
+  settle(next, events)
+  return { state: next, events, error: null }
+}
+
+/**
+ * The clock ran out on the active player. Whatever's on the pile becomes
+ * theirs — win or lose, the turn moves on. Unlike `pickUpPile`, this ignores
+ * the blind-flip restriction: a player stalling on a face-down card still
+ * gets punished and passed over, rather than stuck holding up the table.
+ */
+function timeout(
+  prev: GameState,
+  next: GameState,
+  player: PlayerState,
+  events: GameEvent[],
+): ActionResult {
+  const guard = requireTurn(prev, next, player)
+  if (guard) return guard
+
+  events.push({ type: 'PlayerTimedOut', playerId: player.playerId })
+
+  const count = next.pile.length
+  if (count > 0) {
+    player.hand.push(...next.pile)
+    player.hand.sort(byValue)
+    next.pile = []
+    clearBoard(next)
+    events.push({ type: 'PileTaken', playerId: player.playerId, count })
+  }
+
   advanceTurn(next, 1, events)
   settle(next, events)
   return { state: next, events, error: null }

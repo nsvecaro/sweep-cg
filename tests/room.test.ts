@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { applyCommand, emptyRoom, viewOf, type RoomCommand, type RoomRecord } from '@/server/room'
+import { TURN_MS } from '@/engine/game'
+import { applyCommand, applyDueTimeouts, emptyRoom, viewOf, type RoomCommand, type RoomRecord } from '@/server/room'
 
 const NOW = 1_700_000_000_000
 
@@ -176,5 +177,39 @@ describe('ONLINE room', () => {
     expect(room.status).toBe('waiting')
     expect(room.game).toBeNull()
     expect(room.log).toEqual([])
+  })
+
+  it('ROOM_TIMEOUT — a player cannot request their own timeout as a command', () => {
+    const room = dealt()
+    const active = room.game!.activePlayerId!
+
+    expect(refuse(room, { type: 'action', action: { type: 'timeout', playerId: active } }, active)).toBe(
+      'The table enforces that automatically',
+    )
+  })
+
+  it('ROOM_TIMEOUT — applyDueTimeouts does nothing before the deadline', () => {
+    const room = dealt()
+    expect(applyDueTimeouts(room, room.game!.turnEndsAt! - 1)).toBeNull()
+  })
+
+  it('ROOM_TIMEOUT — applyDueTimeouts gives a grace window past the displayed deadline', () => {
+    const room = dealt()
+    // A move that beat the clock client-side can still land a moment late over the wire.
+    expect(applyDueTimeouts(room, room.game!.turnEndsAt!)).toBeNull()
+    expect(applyDueTimeouts(room, room.game!.turnEndsAt! + 500)).toBeNull()
+  })
+
+  it('ROOM_TIMEOUT — applyDueTimeouts punishes the stalled player once the grace window passes', () => {
+    const room = dealt()
+    const active = room.game!.activePlayerId!
+
+    const dueAt = room.game!.turnEndsAt! + 1000
+    const settled = applyDueTimeouts(room, dueAt)!
+
+    expect(settled).not.toBeNull()
+    expect(settled.game!.activePlayerId).not.toBe(active)
+    expect(settled.log.map((e) => e.event.type)).toContain('PlayerTimedOut')
+    expect(settled.game!.turnEndsAt).toBe(dueAt + TURN_MS)
   })
 })

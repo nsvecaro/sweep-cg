@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   RANK_LABEL,
+  TURN_MS,
   getLegalMoves,
   playableZone,
   type Card,
@@ -16,7 +17,7 @@ import { burstLabel, demandOf, sweepLabel } from './format'
 
 interface Announce {
   key: number
-  kind: 'burst' | 'sweep'
+  kind: 'burst' | 'sweep' | 'timeout'
   text: string
 }
 
@@ -73,15 +74,28 @@ export function GameTable({ transport, room, game, viewerId, onError }: Props) {
         if (text) setAnnounce({ key: entry.id, kind: 'burst', text })
       } else if (event.type === 'PileSwept') {
         setAnnounce({ key: entry.id, kind: 'sweep', text: sweepLabel(nameOf(game, event.playerId), event.reason) })
+      } else if (event.type === 'PlayerTimedOut') {
+        setAnnounce({ key: entry.id, kind: 'timeout', text: `${nameOf(game, event.playerId)} ran out of time!` })
       }
     }
   }, [room.log])
 
   useEffect(() => {
     if (!announce) return
-    const timer = setTimeout(() => setAnnounce(null), announce.kind === 'sweep' ? 1700 : 950)
+    const timer = setTimeout(() => setAnnounce(null), announce.kind === 'sweep' ? 1700 : announce.kind === 'timeout' ? 1400 : 950)
     return () => clearTimeout(timer)
   }, [announce])
+
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (game.phase !== 'playing' || game.turnEndsAt === null) return
+    setNow(Date.now())
+    const id = setInterval(() => setNow(Date.now()), 250)
+    return () => clearInterval(id)
+  }, [game.phase, game.turnEndsAt])
+
+  const secondsLeft =
+    game.turnEndsAt === null ? null : Math.ceil(Math.max(0, Math.min(TURN_MS, game.turnEndsAt - now)) / 1000)
 
   const tableSlots = tableSlotsFor(viewer)
 
@@ -122,7 +136,12 @@ export function GameTable({ transport, room, game, viewerId, onError }: Props) {
 
       <section className="opponents" aria-label="Other players">
         {opponents.map((player) => (
-          <OpponentSeat key={player.playerId} player={player} active={game.activePlayerId === player.playerId} />
+          <OpponentSeat
+            key={player.playerId}
+            player={player}
+            active={game.activePlayerId === player.playerId}
+            secondsLeft={game.activePlayerId === player.playerId ? secondsLeft : null}
+          />
         ))}
       </section>
 
@@ -180,7 +199,10 @@ export function GameTable({ transport, room, game, viewerId, onError }: Props) {
       <section className={`you ${isMyTurn ? 'you--active' : ''}`}>
         <div className="you__head">
           <span className="you__name">{viewer.name}</span>
-          <span className="you__turn">{isMyTurn ? 'You’re up' : `${nameOf(game, game.activePlayerId)} is thinking`}</span>
+          <span className="you__meta">
+            {isMyTurn && secondsLeft !== null && <Clock seconds={secondsLeft} />}
+            <span className="you__turn">{isMyTurn ? 'You’re up' : `${nameOf(game, game.activePlayerId)} is thinking`}</span>
+          </span>
         </div>
 
         <div className="tableau">
@@ -292,13 +314,28 @@ function Stack({ label, count, muted = false }: { label: string; count: number; 
   )
 }
 
-function OpponentSeat({ player, active }: { player: PlayerState; active: boolean }) {
+function Clock({ seconds }: { seconds: number }) {
+  return <span className={`clock ${seconds <= 5 ? 'clock--urgent' : ''}`}>{seconds}s</span>
+}
+
+function OpponentSeat({
+  player,
+  active,
+  secondsLeft,
+}: {
+  player: PlayerState
+  active: boolean
+  secondsLeft: number | null
+}) {
   const slots = tableSlotsFor(player)
   return (
     <article className={`seat ${active ? 'seat--active' : ''} ${player.isFinished ? 'seat--out' : ''}`}>
       <header className="seat__head">
         <span className="seat__name">{player.name}</span>
-        {player.isFinished ? <span className="tag">Out</span> : <span className="seat__hand">{player.hand.length}</span>}
+        <span className="seat__meta">
+          {secondsLeft !== null && <Clock seconds={secondsLeft} />}
+          {player.isFinished ? <span className="tag">Out</span> : <span className="seat__hand">{player.hand.length}</span>}
+        </span>
       </header>
       <div className="seat__cards tableau__cards">
         {slots.length === 0 && !player.isFinished && <span className="seat__empty">table clear</span>}

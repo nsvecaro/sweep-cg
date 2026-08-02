@@ -148,6 +148,7 @@ function start(room: RoomRecord, difficulty: Difficulty, ctx: CommandContext): C
   room.game = createGame({
     difficulty,
     players: room.seats.map((s) => ({ playerId: s.playerId, name: s.username })),
+    now: ctx.now,
   })
   room.log = []
   return { ok: true, room }
@@ -155,15 +156,40 @@ function start(room: RoomRecord, difficulty: Difficulty, ctx: CommandContext): C
 
 function act(room: RoomRecord, action: GameAction, ctx: CommandContext): CommandOutcome {
   if (!room.game) return fail('No game in progress')
+  // The clock is the table's to enforce, never a move a player can request for themself.
+  if (action.type === 'timeout') return fail('The table enforces that automatically')
   const seat = room.seats.find((s) => s.playerId === action.playerId)
   if (!seat) return fail('No such player')
   if (seat.ownerId !== ctx.callerId) return fail('That is not your seat')
 
-  const result = applyAction(room.game, action)
+  const result = applyAction(room.game, action, ctx.now)
   if (result.error) return fail(result.error)
   room.game = result.state
   record(room, result.events)
   return { ok: true, room }
+}
+
+// Slack behind the displayed 20s so a move that beat the clock client-side
+// doesn't get overtaken by clock skew and the command's own network hop.
+const TIMEOUT_GRACE_MS = 1000
+
+/**
+ * Called lazily from the API layer (on a poll or a command) instead of a
+ * background timer — there's no long-running process to own one. Returns
+ * null when nothing is due, so callers can skip the write entirely.
+ */
+export function applyDueTimeouts(input: RoomRecord, now: number): RoomRecord | null {
+  const game = input.game
+  if (!game || game.phase !== 'playing' || game.activePlayerId === null) return null
+  if (game.turnEndsAt === null || now < game.turnEndsAt + TIMEOUT_GRACE_MS) return null
+
+  const room: RoomRecord = structuredClone(input)
+  room.updatedAt = now
+  const result = applyAction(room.game!, { type: 'timeout', playerId: game.activePlayerId }, now)
+  if (result.error) return null
+  room.game = result.state
+  record(room, result.events)
+  return room
 }
 
 function returnToLobby(room: RoomRecord, ctx: CommandContext): CommandOutcome {
@@ -184,7 +210,7 @@ function leave(room: RoomRecord, ctx: CommandContext): CommandOutcome {
   // Forfeit before the seats disappear, so the engine can hand out the walkover.
   if (room.game && room.game.phase !== 'finished') {
     for (const seat of mine) {
-      const result = applyAction(room.game, { type: 'forfeit', playerId: seat.playerId })
+      const result = applyAction(room.game, { type: 'forfeit', playerId: seat.playerId }, ctx.now)
       if (!result.error) {
         room.game = result.state
         record(room, result.events)

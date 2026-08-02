@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { isValidLobbyCode, normalizeLobbyCode } from '../src/lobby/codes.js'
 import {
   applyCommand,
+  applyDueTimeouts,
   emptyRoom,
   viewOf,
   type RoomCommand,
@@ -40,8 +41,11 @@ async function poll(req: VercelRequest, res: VercelResponse) {
   if (!isValidLobbyCode(code)) return res.status(400).json({ error: 'Bad table code' })
   if (!callerId) return res.status(400).json({ error: 'Missing player id' })
 
-  const loaded = await load(code)
+  let loaded = await load(code)
   if (!loaded) return res.status(404).json({ error: 'That table is gone' })
+
+  const now = Date.now()
+  loaded = (await settleTimeouts(code, loaded, now)) ?? loaded
 
   // The client sends the version it already has; nothing new means an empty 200.
   const since = Number(req.query.since ?? -1)
@@ -49,6 +53,21 @@ async function poll(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ unchanged: true, version: loaded.version })
   }
   return res.status(200).json({ view: viewOf(loaded.room, callerId, loaded.version) })
+}
+
+/**
+ * Nobody runs a timer for a serverless room, so any client that happens to
+ * poll (or send a command) while a deadline has passed enforces it on the
+ * table's behalf. Cheap-checks first so an on-time table never pays for a
+ * write it doesn't need.
+ */
+async function settleTimeouts(
+  code: string,
+  loaded: { room: RoomRecord; version: number },
+  now: number,
+): Promise<{ room: RoomRecord; version: number } | null> {
+  if (!applyDueTimeouts(loaded.room, now)) return null
+  return update(code, ({ room }) => applyDueTimeouts(room, now) ?? UNCHANGED)
 }
 
 async function command(req: VercelRequest, res: VercelResponse) {
@@ -73,6 +92,9 @@ async function command(req: VercelRequest, res: VercelResponse) {
 
   const code = normalizeLobbyCode(String(body.code ?? ''))
   if (!isValidLobbyCode(code)) return res.status(400).json({ error: 'Bad table code' })
+
+  const loaded = await load(code)
+  if (loaded) await settleTimeouts(code, loaded, now)
 
   const refusals: string[] = []
   const saved = await update(code, ({ room }) => {
