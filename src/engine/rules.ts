@@ -51,7 +51,10 @@ export function canPlayValue(value: number, board: Board): boolean {
 
 /**
  * The board state a play leaves behind, before sweeps are resolved.
- * Eights stack: each one skips the next seat still in the game.
+ * Eights stack: each one skips the next seat still in the game. `skips` is
+ * capped downstream at the number of live opponents — you can't skip past
+ * everyone else and skip yourself too, so extra eights just bring the turn
+ * back around to the thrower.
  */
 export function applyValueEffect(value: number, count: number, board: Board): {
   activeValue: number

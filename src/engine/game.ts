@@ -391,6 +391,13 @@ function checkFinished(state: GameState, player: PlayerState, events: GameEvent[
   events.push({ type: 'PlayerFinished', playerId: player.playerId, place: state.finishOrder.length })
 }
 
+/**
+ * `steps - 1` is how many players an eight-stack skips. Skipping only ever
+ * makes sense against someone still at the table, so it's capped at the
+ * number of live opponents — beyond that, extra eights are wasted and the
+ * turn simply comes back around. (With no stack, steps is always 1: skip
+ * nobody, hand straight to the next live player, same as before.)
+ */
 function advanceTurn(state: GameState, steps: number, events: GameEvent[]): void {
   const seats = state.players
   const live = seats.filter(isLive)
@@ -399,19 +406,26 @@ function advanceTurn(state: GameState, steps: number, events: GameEvent[]): void
     return
   }
 
-  let index = seats.findIndex((p) => p.playerId === state.activePlayerId)
-  if (index < 0) index = -1
-
-  let moved = 0
-  while (moved < steps) {
-    index = (index + 1) % seats.length
-    if (!isLive(seats[index])) continue
-    moved++
-    if (moved < steps) {
-      events.push({ type: 'PlayerSkipped', playerId: seats[index].playerId })
-    }
+  const start = seats.findIndex((p) => p.playerId === state.activePlayerId)
+  const opponents: PlayerState[] = []
+  for (let i = 1; i < seats.length; i++) {
+    const seat = seats[(start + i) % seats.length]
+    if (isLive(seat)) opponents.push(seat)
   }
-  state.activePlayerId = seats[index].playerId
+
+  const skips = Math.min(steps - 1, opponents.length)
+  for (let i = 0; i < skips; i++) {
+    events.push({ type: 'PlayerSkipped', playerId: opponents[i].playerId })
+  }
+
+  // Full lap, thrower still in the game: it's their turn again. Full lap
+  // but the thrower just went out on that same stack: there's no one to
+  // loop back to, so it wraps to the first opponent instead — the same
+  // seat a stack of exactly one skip short would have landed on.
+  state.activePlayerId =
+    skips === opponents.length && isLive(seats[start])
+      ? seats[start].playerId
+      : opponents[skips % opponents.length].playerId
   state.turn++
 }
 

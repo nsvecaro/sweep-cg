@@ -148,27 +148,51 @@ describe('special cards', () => {
     expect(result.events).toContainEqual({ type: 'PlayerSkipped', playerId: 'c' })
   })
 
-  it('SPECIAL_8 — heads up, one eight and three eights both hand the turn straight back', () => {
+  it('SPECIAL_8 — heads up, any number of eights hands the turn straight back to the thrower', () => {
+    // With a single opponent, there's nobody past them to land on — every
+    // stack just skips that one seat over and over and comes back to you.
     const state = stateOf({
       seats: [{ id: 'a', hand: ['8h', '8c', '8s', 'Kd'] }, { id: 'b' }],
       pile: ['6s'],
       deck: [],
     })
-    for (const throwing of [['h8'], ['h8', 'c8', 's8']]) {
+    for (const throwing of [['h8'], ['h8', 'c8'], ['h8', 'c8', 's8']]) {
       const result = applyAction(state, { type: 'playCards', playerId: 'a', cardIds: throwing })
       expect(result.error).toBeNull()
       expect(result.state.activePlayerId).toBe('a')
+      expect(result.events).toContainEqual({ type: 'PlayerSkipped', playerId: 'b' })
     }
   })
 
-  it('SPECIAL_8 — heads up, two eights step past the thrower and land on the opponent', () => {
+  it('SPECIAL_8 — stacking past every opponent is capped, not looped again', () => {
+    // Three players, two opponents: three eights at once (four would burn the
+    // pile as four of a kind, a different rule entirely) has more skips than
+    // there are seats to skip. It caps at b and c, not a second lap.
     const state = stateOf({
-      seats: [{ id: 'a', hand: ['8h', '8c', 'Kd'] }, { id: 'b' }],
+      seats: [{ id: 'a', hand: ['8h', '8c', '8s', 'Kd'] }, { id: 'b' }, { id: 'c' }],
+      pile: ['6s'],
+      deck: [],
+    })
+    const result = applyAction(state, { type: 'playCards', playerId: 'a', cardIds: ['h8', 'c8', 's8'] })
+
+    expect(result.error).toBeNull()
+    expect(result.state.activePlayerId).toBe('a')
+    expect(result.events.filter((e) => e.type === 'PlayerSkipped')).toHaveLength(2)
+  })
+
+  it('SPECIAL_8 — a stack that finishes the thrower’s own hand skips past them, not onto them', () => {
+    const state = stateOf({
+      seats: [{ id: 'a', hand: ['8h', '8c'] }, { id: 'b' }, { id: 'c' }],
       pile: ['6s'],
       deck: [],
     })
     const result = applyAction(state, { type: 'playCards', playerId: 'a', cardIds: ['h8', 'c8'] })
+
+    expect(result.error).toBeNull()
+    expect(seat(result.state, 'a').isFinished).toBe(true)
+    expect(result.state.phase).toBe('playing')
     expect(result.state.activePlayerId).toBe('b')
+    expect(result.state.players.find((p) => p.playerId === result.state.activePlayerId)?.isFinished).toBe(false)
   })
 
   it('SPECIAL_10 — a ten sweeps the pile to the graveyard and the player goes again', () => {
