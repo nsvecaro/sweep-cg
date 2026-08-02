@@ -1,21 +1,55 @@
 :root {
-  --table: #191b1f;
-  --table-lip: #0e1013;
-  --rail: #23262c;
-  --hairline: #2f333b;
-  --bone: #f3efe6;
-  --ink: #17191e;
-  --chalk: #838c99;
-  --rouge: #c0392f;
+  /* ---- lo-fi cabinet palette: near-black felt, dual neon, printed cardstock ---- */
+  --void: #0a0a0c;
+  --void-deep: #050506;
+  --surface: #131318;
+  --surface-raised: #1b1b22;
+  --line: #26262f;
+  --paper: #ece7da;
+  --ink: #0d0d0f;
+  --hot: #ff2fb0;
+  --cool: #29e0ff;
+  --warn: #ff5a1f;
+  --chalk: #8e8ea3;
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Rokkitt', ui-serif, Georgia, serif;
+  --font-sans: 'Space Grotesk', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+  --font-pixel: 'Press Start 2P', var(--font-mono);
 
   --card-w: 74px;
-  --card-r: 7px;
+  --card-r: 2px;
   --gap: 12px;
+  --notch: 7px;
+  --notch-clip: polygon(
+    0 var(--notch),
+    var(--notch) var(--notch),
+    var(--notch) 0,
+    calc(100% - var(--notch)) 0,
+    calc(100% - var(--notch)) var(--notch),
+    100% var(--notch),
+    100% calc(100% - var(--notch)),
+    calc(100% - var(--notch)) calc(100% - var(--notch)),
+    calc(100% - var(--notch)) 100%,
+    var(--notch) 100%,
+    var(--notch) calc(100% - var(--notch)),
+    0 calc(100% - var(--notch))
+  );
+  --notch-clip-top: polygon(
+    0 var(--notch),
+    var(--notch) var(--notch),
+    var(--notch) 0,
+    calc(100% - var(--notch)) 0,
+    calc(100% - var(--notch)) var(--notch),
+    100% var(--notch),
+    100% 100%,
+    0 100%
+  );
 
   --lift: cubic-bezier(0.2, 0.9, 0.3, 1);
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 @media (max-width: 720px) {
@@ -36,12 +70,27 @@ body,
 }
 
 body {
+  position: relative;
   margin: 0;
-  background: var(--table-lip);
-  color: var(--bone);
+  background: var(--void);
+  color: var(--paper);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   overscroll-behavior: none;
+  overflow-x: hidden;
+}
+
+/* baked-in print grain, everywhere — the cabinet's dust, not just the cards */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  background-image: var(--noise);
+  background-size: 120px 120px;
+  opacity: 0.05;
+  mix-blend-mode: overlay;
 }
 
 button {
@@ -58,7 +107,7 @@ input {
 }
 
 :focus-visible {
-  outline: 2px solid var(--bone);
+  outline: 2px solid var(--cool);
   outline-offset: 3px;
 }
 

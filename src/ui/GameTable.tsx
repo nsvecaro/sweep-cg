@@ -83,6 +83,8 @@ export function GameTable({ transport, room, game, viewerId, onError }: Props) {
     return () => clearTimeout(timer)
   }, [announce])
 
+  const tableSlots = tableSlotsFor(viewer)
+
   const owned = [...viewer.hand, ...viewer.faceUp]
   const chosen = selected.filter((id) => owned.some((c) => c.id === id))
 
@@ -182,41 +184,40 @@ export function GameTable({ transport, room, game, viewerId, onError }: Props) {
         </div>
 
         <div className="tableau">
-          <div className="tableau__group">
-            <span className="eyebrow">Face down</span>
-            <div className="tableau__cards">
-              {viewer.faceDown.length === 0 && <EmptySlot label="Clear" />}
-              {viewer.faceDown.map((card) =>
-                mustFlip ? (
-                  <button
-                    key={card.id}
-                    type="button"
-                    className="card card--back card--tappable"
-                    onClick={() => void send(transport.dispatch({ type: 'playFaceDownCard', playerId: viewerId, cardId: card.id }))}
-                  >
-                    <span className="card__count">Flip</span>
-                  </button>
-                ) : (
-                  <CardBack key={card.id} />
-                ),
-              )}
-            </div>
-          </div>
-
-          <div className="tableau__group">
-            <span className="eyebrow">Face up</span>
-            <div className="tableau__cards">
-              {viewer.faceUp.length === 0 && <EmptySlot label="Clear" />}
-              {viewer.faceUp.map((card) => (
-                <PlayingCard
-                  key={card.id}
-                  card={card}
-                  state={cardState(zone === 'faceUp' && isMyTurn, playableValues.has(card.value))}
-                  selected={chosen.includes(card.id)}
-                  onClick={zone === 'faceUp' ? () => toggle(card) : undefined}
-                />
-              ))}
-            </div>
+          <span className="eyebrow">Table cards</span>
+          <div className="tableau__cards">
+            {tableSlots.length === 0 && <EmptySlot label="Clear" />}
+            {tableSlots.map(({ down, up }, i) => (
+              <div key={down?.id ?? up?.id ?? i} className="tableau__slot">
+                {down && (
+                  <div className="tableau__down">
+                    {up ? (
+                      <CardBack />
+                    ) : mustFlip ? (
+                      <button
+                        type="button"
+                        className="card card--back card--tappable"
+                        onClick={() => void send(transport.dispatch({ type: 'playFaceDownCard', playerId: viewerId, cardId: down.id }))}
+                      >
+                        <span className="card__count">Flip</span>
+                      </button>
+                    ) : (
+                      <CardBack />
+                    )}
+                  </div>
+                )}
+                {up && (
+                  <div className="tableau__up">
+                    <PlayingCard
+                      card={up}
+                      state={cardState(zone === 'faceUp' && isMyTurn, playableValues.has(up.value))}
+                      selected={chosen.includes(up.id)}
+                      onClick={zone === 'faceUp' ? () => toggle(up) : undefined}
+                    />
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
 
@@ -273,6 +274,15 @@ function nameOf(game: GameState, playerId: string | null): string {
   return game.players.find((p) => p.playerId === playerId)?.name ?? 'Someone'
 }
 
+/** Face-up sits on top of face-down as a group — the two arrays aren't paired card-for-card. */
+function tableSlotsFor(player: PlayerState): { down?: Card; up?: Card }[] {
+  const count = Math.max(player.faceDown.length, player.faceUp.length)
+  return Array.from({ length: count }, (_, i) => ({
+    down: player.faceDown[i],
+    up: player.faceUp[i],
+  }))
+}
+
 function Stack({ label, count, muted = false }: { label: string; count: number; muted?: boolean }) {
   return (
     <div className={`stack ${muted ? 'stack--muted' : ''}`}>
@@ -283,22 +293,29 @@ function Stack({ label, count, muted = false }: { label: string; count: number; 
 }
 
 function OpponentSeat({ player, active }: { player: PlayerState; active: boolean }) {
+  const slots = tableSlotsFor(player)
   return (
     <article className={`seat ${active ? 'seat--active' : ''} ${player.isFinished ? 'seat--out' : ''}`}>
       <header className="seat__head">
         <span className="seat__name">{player.name}</span>
         {player.isFinished ? <span className="tag">Out</span> : <span className="seat__hand">{player.hand.length}</span>}
       </header>
-      <div className="seat__cards">
-        {player.faceUp.map((card) => (
-          <PlayingCard key={card.id} card={card} />
+      <div className="seat__cards tableau__cards">
+        {slots.length === 0 && !player.isFinished && <span className="seat__empty">table clear</span>}
+        {slots.map(({ down, up }, i) => (
+          <div key={down?.id ?? up?.id ?? i} className="tableau__slot">
+            {down && (
+              <div className="tableau__down">
+                <CardBack />
+              </div>
+            )}
+            {up && (
+              <div className="tableau__up">
+                <PlayingCard card={up} />
+              </div>
+            )}
+          </div>
         ))}
-        {player.faceDown.map((card) => (
-          <CardBack key={card.id} />
-        ))}
-        {player.faceUp.length === 0 && player.faceDown.length === 0 && !player.isFinished && (
-          <span className="seat__empty">table clear</span>
-        )}
       </div>
     </article>
   )

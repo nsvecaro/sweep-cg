@@ -1,6 +1,33 @@
-import { RANK_LABEL, SUIT_SYMBOL, type Card } from '@/engine'
+import { RANK_LABEL, type Card, type Suit } from '@/engine'
 
 type State = 'playable' | 'dead' | 'plain'
+
+/** Hand-authored bitmaps — crisp 1-unit rects, no anti-aliasing. */
+const SUIT_BITMAP: Record<Suit, string[]> = {
+  spades: ['...#...', '..###..', '.#####.', '#######', '#######', '.#.#.#.', '..###..'],
+  hearts: ['.##.##.', '#######', '#######', '#######', '.#####.', '..###..', '...#...'],
+  diamonds: ['...#...', '..###..', '.#####.', '#######', '.#####.', '..###..', '...#...'],
+  clubs: ['..###..', '.#####.', '.#####.', '##...##', '#######', '.#####.', '...#...', '..###..'],
+}
+
+function SuitGlyph({ suit, className }: { suit: Suit; className?: string }) {
+  const grid = SUIT_BITMAP[suit]
+  const size = grid.length
+  const cells = grid.flatMap((row, y) =>
+    [...row].flatMap((cell, x) => (cell === '#' ? [<rect key={`${x}-${y}`} x={x} y={y} width={1} height={1} />] : [])),
+  )
+  return (
+    <svg
+      className={className}
+      viewBox={`0 0 ${size} ${size}`}
+      fill="currentColor"
+      shapeRendering="crispEdges"
+      aria-hidden="true"
+    >
+      {cells}
+    </svg>
+  )
+}
 
 interface Props {
   card: Card
@@ -51,10 +78,18 @@ export function PlayingCard({ card, state = 'plain', selected = false, scale, on
 }
 
 function CardFace({ card }: { card: Card }) {
+  const rank = RANK_LABEL[card.value]
   return (
     <>
-      <span className="card__rank">{RANK_LABEL[card.value]}</span>
-      <span className="card__pip">{SUIT_SYMBOL[card.suit]}</span>
+      <span className="card__index card__index--tl" aria-hidden="true">
+        <span className="card__rank">{rank}</span>
+        <SuitGlyph suit={card.suit} className="card__suit" />
+      </span>
+      <SuitGlyph suit={card.suit} className="card__pip" />
+      <span className="card__index card__index--br" aria-hidden="true">
+        <span className="card__rank">{rank}</span>
+        <SuitGlyph suit={card.suit} className="card__suit" />
+      </span>
     </>
   )
 }
@@ -62,7 +97,7 @@ function CardFace({ card }: { card: Card }) {
 export function CardBack({ scale, count }: { scale?: number; count?: number }) {
   return (
     <div className="card card--back" style={scaleStyle(scale)} aria-hidden={count === undefined}>
-      {count !== undefined && <span className="card__count">{count}</span>}
+      {count !== undefined ? <span className="card__count">{count}</span> : <SuitGlyph suit="diamonds" className="card__mark" />}
     </div>
   )
 }
