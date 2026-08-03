@@ -2,11 +2,12 @@ import { useState } from 'react'
 import type { Difficulty } from '@/engine'
 import { MAX_LOBBY_PLAYERS } from '@/lobby'
 import type { RoomSnapshot, SweepTransport } from '@/net/transport'
+import { SteelBall } from './PlayingCard'
 
 const MODES: { id: Difficulty; name: string; blurb: string }[] = [
-  { id: 'easy', name: 'Easy', blurb: 'Choose your face-up cards. Only 2, 10 and A are special.' },
-  { id: 'medium', name: 'Medium', blurb: 'Same setup, but 5, 7 and 8 come alive.' },
-  { id: 'hard', name: 'Hard', blurb: 'Face-up cards are dealt blind. All specials in play.' },
+  { id: 'easy', name: 'Easy', blurb: 'Pick your own face-up cards. Only 2, 10 and A misbehave.' },
+  { id: 'medium', name: 'Medium', blurb: 'Same setup, but 5, 7 and 8 wake up too.' },
+  { id: 'hard', name: 'Hard', blurb: 'Face-up cards dealt blind. Everything misbehaves.' },
 ]
 
 interface Props {
@@ -34,14 +35,17 @@ export function LobbyRoom({ transport, room, onError }: Props) {
       setCopied(true)
       setTimeout(() => setCopied(false), 1600)
     } catch {
-      onError('Copying is blocked here — read the code out instead')
+      onError('Copying is blocked here — read the code out loud instead')
     }
   }
 
   return (
     <main className="screen lobby">
       <header className="lobby__head">
-        <h1 className="wordmark wordmark--small">Sweep</h1>
+        <h1 className="wordmark wordmark--small">
+          <SteelBall className="wordmark__ball" />
+          Sweep
+        </h1>
         <button type="button" className="btn btn--ghost" onClick={() => void transport.leave()}>
           Leave table
         </button>
@@ -59,7 +63,7 @@ export function LobbyRoom({ transport, room, onError }: Props) {
         <span className="eyebrow">
           Players {room.members.length}/{MAX_LOBBY_PLAYERS}
         </span>
-        <ul className="seats">
+        <ul className="seats-list">
           {room.members.map((member) => (
             <li key={member.playerId} className="seats__row">
               <span className="seats__name">{member.username}</span>
@@ -123,7 +127,7 @@ export function LobbyRoom({ transport, room, onError }: Props) {
           </div>
           <button
             type="button"
-            className="btn btn--primary btn--wide"
+            className="btn btn--go btn--wide"
             disabled={room.members.length < 2}
             onClick={() => void run(transport.startGame(difficulty))}
           >

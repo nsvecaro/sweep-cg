@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { GameState } from '@/engine'
+import { isSpecial, type GameState } from '@/engine'
 import type { SweepTransport } from '@/net/transport'
 import { LeaveGame } from './LeaveGame'
 import { PlayingCard } from './PlayingCard'
@@ -51,7 +51,7 @@ export function SetupHand({ transport, game, viewerId, onError }: Props) {
         </header>
         <div className="setup__hand">
           {player.faceUp.map((card) => (
-            <PlayingCard key={card.id} card={card} />
+            <PlayingCard key={card.id} card={card} special={isSpecial(card.value, game.difficulty)} />
           ))}
         </div>
         <LeaveGame transport={transport} rivals={rivals} />
@@ -65,7 +65,7 @@ export function SetupHand({ transport, game, viewerId, onError }: Props) {
         <span className="eyebrow">{player.name}</span>
         <h2 className="headline">Show three cards</h2>
         <p className="hint">
-          They sit face-up in front of you and are played once your hand runs dry. Everyone can see them.
+          They sit face-up in front of you and get played once your hand runs dry. Everyone can see them, so choose what you want them to fear.
         </p>
       </header>
 
@@ -76,6 +76,7 @@ export function SetupHand({ transport, game, viewerId, onError }: Props) {
             card={card}
             state={picked.includes(card.id) ? 'playable' : 'plain'}
             selected={picked.includes(card.id)}
+            special={isSpecial(card.value, game.difficulty)}
             onClick={() => toggle(card.id)}
           />
         ))}
@@ -83,7 +84,7 @@ export function SetupHand({ transport, game, viewerId, onError }: Props) {
 
       <button
         type="button"
-        className="btn btn--primary btn--wide"
+        className="btn btn--go btn--wide"
         disabled={picked.length !== FACE_UP_COUNT}
         onClick={() => void confirm()}
       >

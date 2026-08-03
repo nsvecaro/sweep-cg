@@ -1,14 +1,16 @@
 import { useState } from 'react'
+import { RANK_LABEL } from '@/engine'
 import { LOBBY_CODE_LENGTH, randomUsername, type Result } from '@/lobby'
 import type { SweepTransport } from '@/net/transport'
+import { RankGlyph, SteelBall } from './PlayingCard'
 
-const SPECIALS: [string, string][] = [
-  ['2', 'resets the pile'],
-  ['5', 'mirrors the card below'],
-  ['7', 'forces the next play low'],
-  ['8', 'skips the next player'],
-  ['10', 'burns the pile'],
-  ['A', 'tops everything'],
+const SPECIALS: [number, string][] = [
+  [2, 'wipes the demand'],
+  [5, 'copies the card below'],
+  [7, 'forces the next play low'],
+  [8, 'skips the next player'],
+  [10, 'burns the pile'],
+  [14, 'tops everything'],
 ]
 
 interface Props {
@@ -37,14 +39,19 @@ export function MainMenu({ transport, onError }: Props) {
   return (
     <main className="screen menu">
       <header className="menu__head">
-        <h1 className="wordmark">Sweep</h1>
-        <p className="menu__thesis">Throw higher, or take the whole pile.</p>
+        <h1 className="wordmark">
+          <SteelBall className="wordmark__ball" />
+          Sweep
+        </h1>
+        <p className="menu__thesis">Throw higher than the pile, or eat the whole thing.</p>
       </header>
 
       <ol className="ranks" aria-label="Special cards">
-        {SPECIALS.map(([rank, effect]) => (
-          <li key={rank} className="ranks__item">
-            <span className="ranks__rank">{rank}</span>
+        {SPECIALS.map(([value, effect]) => (
+          <li key={value} className="ranks__item">
+            <span className="ranks__rank">
+              <RankGlyph value={value} label={RANK_LABEL[value]} />
+            </span>
             <span className="ranks__effect">{effect}</span>
           </li>
         ))}
@@ -70,7 +77,7 @@ export function MainMenu({ transport, onError }: Props) {
         <div className="menu__actions">
           <button
             type="button"
-            className="btn btn--primary"
+            className="btn btn--go"
             disabled={busy}
             onClick={() => void withName(() => transport.createLobby())}
           >

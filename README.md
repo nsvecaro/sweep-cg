@@ -64,6 +64,17 @@ you the connection is missing.
 (`src/server/devServer.ts`). No Redis account needed — open two browser windows, host in one, join
 with the code in the other, and you are playing. State lives only as long as the dev server does.
 
+**Driving the table solo.** In dev only, `?local` runs the whole game in memory against bots
+(`LocalTransport`) so one browser window is a whole table. Add `auto=3&mode=hard` to deal
+immediately, or `pass=1` to add a pass-and-play seat:
+
+```
+http://localhost:5173/?local&auto=3&mode=hard
+```
+
+The branch is behind `import.meta.env.DEV` and imports dynamically, so production never pulls the
+bots or the in-memory transport into the bundle.
+
 To rehearse against real Redis instead, use the Vercel CLI:
 
 ```bash

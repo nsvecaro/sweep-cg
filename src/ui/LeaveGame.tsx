@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { SweepTransport } from '@/net/transport'
 
 interface Props {
@@ -19,41 +20,45 @@ export function LeaveGame({ transport, rivals }: Props) {
   return (
     <>
       <button type="button" className="btn btn--tiny" onClick={() => setAsking(true)}>
-        Leave game
+        Leave
       </button>
 
-      {asking && (
-        <div className="overlay" role="dialog" aria-modal="true" aria-labelledby="leave-title">
-          <section className="overlay__panel">
-            <span className="eyebrow">Leave game</span>
-            <h2 className="headline" id="leave-title">
-              Are you sure?
-            </h2>
-            <p className="hint">{consequence}</p>
-            <div className="overlay__actions">
-              <button
-                type="button"
-                className="btn btn--ghost"
-                disabled={leaving}
-                onClick={() => setAsking(false)}
-              >
-                Keep playing
-              </button>
-              <button
-                type="button"
-                className="btn btn--danger"
-                disabled={leaving}
-                onClick={() => {
-                  setLeaving(true)
-                  void transport.leave()
-                }}
-              >
-                {leaving ? 'Leaving…' : 'Leave game'}
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
+      {/* Portalled out: the table shakes on impact, and a transformed ancestor
+          would drag this fixed overlay along with it. */}
+      {asking &&
+        createPortal(
+          <div className="overlay" role="dialog" aria-modal="true" aria-labelledby="leave-title">
+            <section className="overlay__panel">
+              <span className="eyebrow">Leave game</span>
+              <h2 className="headline" id="leave-title">
+                Are you sure?
+              </h2>
+              <p className="hint">{consequence}</p>
+              <div className="overlay__actions">
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  disabled={leaving}
+                  onClick={() => setAsking(false)}
+                >
+                  Keep playing
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--eat"
+                  disabled={leaving}
+                  onClick={() => {
+                    setLeaving(true)
+                    void transport.leave()
+                  }}
+                >
+                  {leaving ? 'Leaving…' : 'Leave game'}
+                </button>
+              </div>
+            </section>
+          </div>,
+          document.body,
+        )}
     </>
   )
 }

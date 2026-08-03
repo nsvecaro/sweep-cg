@@ -84,7 +84,12 @@ export class LocalTransport implements SweepTransport {
 
   async addBot(): Promise<Result<PlayerProfile>> {
     const seat = this.addSeat(`${randomUsername()}`)
-    if (seat.ok) this.botIds.add(seat.value.playerId)
+    if (seat.ok) {
+      this.botIds.add(seat.value.playerId)
+      // A bot seat is not a pass-and-play seat. Leaving it owned makes the app
+      // stop and ask a human to identify as the bot before every bot turn.
+      this.ownedIds.delete(seat.value.playerId)
+    }
     this.publish()
     return seat
   }

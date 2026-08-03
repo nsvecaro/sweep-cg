@@ -2,7 +2,6 @@ import { RANK_LABEL, VALUES, boardOf, canPlayValue, isSpecial } from '@/engine'
 import type { GameEvent, GameState } from '@/engine'
 
 const WORDS: Record<number, string> = {
-  0: 'Anything',
   2: 'Two',
   3: 'Three',
   4: 'Four',
@@ -18,22 +17,40 @@ const WORDS: Record<number, string> = {
   14: 'Ace',
 }
 
+/**
+ * What you are allowed to throw, split so the display can set the value itself
+ * as a card glyph and the rest as words — the readout reads `[10] OR HIGHER`.
+ * `spoken` carries the same sentence intact, because the glyph is a drawing and
+ * a live region cannot read a drawing.
+ */
 export interface Demand {
+  value: number | null
   headline: string
+  spoken: string
   escapes: string
 }
 
 export function demandOf(state: GameState): Demand {
   const board = boardOf(state)
   if (board.activeValue === null || board.activeValue === 0) {
-    return { headline: 'Open table', escapes: 'Throw whatever you like' }
+    return {
+      value: null,
+      headline: 'Open table',
+      spoken: 'Open table',
+      escapes: 'Throw whatever you like',
+    }
   }
 
-  const headline = board.forceLower
-    ? 'Seven or lower'
+  const demand: Demand = board.forceLower
+    ? { value: 7, headline: 'or lower', spoken: 'Seven or lower', escapes: '' }
     : board.activeValue === 14
-      ? 'Ace only'
-      : `${WORDS[board.activeValue]} or higher`
+      ? { value: 14, headline: 'only', spoken: 'Ace only', escapes: '' }
+      : {
+          value: board.activeValue,
+          headline: 'or higher',
+          spoken: `${WORDS[board.activeValue]} or higher`,
+          escapes: '',
+        }
 
   const escapes = VALUES.filter(
     (v) =>
@@ -42,10 +59,8 @@ export function demandOf(state: GameState): Demand {
       (board.forceLower ? v > 7 : v < board.activeValue!),
   ).map((v) => RANK_LABEL[v])
 
-  return {
-    headline,
-    escapes: escapes.length > 0 ? `${escapes.join(' · ')} still work` : 'No way around it',
-  }
+  demand.escapes = escapes.length > 0 ? `${escapes.join(' · ')} still work` : 'No way around it'
+  return demand
 }
 
 export function describeEvent(event: GameEvent, nameOf: (id: string) => string): string | null {
@@ -76,25 +91,7 @@ export function describeEvent(event: GameEvent, nameOf: (id: string) => string):
 }
 
 function sweepCause(reason: 'ten' | 'quad'): string {
-  return reason === 'ten' ? 'a 10' : '4 of a kind'
-}
-
-/** Punchy headline for throwing 2+ of a kind at once. */
-export function burstLabel(count: number): string | null {
-  switch (count) {
-    case 2:
-      return 'Double Trouble!'
-    case 3:
-      return 'Triple Threat!'
-    case 4:
-      return 'Quadzilla!!'
-    default:
-      return null
-  }
-}
-
-export function sweepLabel(name: string, reason: 'ten' | 'quad'): string {
-  return `${name} swept with ${sweepCause(reason)}`
+  return reason === 'ten' ? 'a 10' : '4 of a kind'
 }
 
 function short(card: { value: number; suit: string }): string {

@@ -125,7 +125,7 @@ function Handover({ name, onReady }: { name: string; onReady: () => void }) {
       <span className="eyebrow">Pass the device</span>
       <h2 className="headline">{name}, it’s your turn</h2>
       <p className="hint">Cards stay hidden until you say you’re looking.</p>
-      <button type="button" className="btn btn--primary btn--wide" onClick={onReady}>
+      <button type="button" className="btn btn--go btn--wide" onClick={onReady}>
         I’m {name}
       </button>
     </main>

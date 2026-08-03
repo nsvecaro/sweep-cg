@@ -20,7 +20,7 @@ export function Result({ game, onDone }: { game: GameState; onDone: () => void }
   return (
     <div className="overlay">
       <section className="overlay__panel">
-        <span className="eyebrow">Final</span>
+        <span className="eyebrow">Game over</span>
         <h2 className="headline">{headline}</h2>
         <ol className="places">
           {game.finishOrder.map((id, index) => (
@@ -39,8 +39,8 @@ export function Result({ game, onDone }: { game: GameState; onDone: () => void }
             </li>
           ))}
         </ol>
-        <button type="button" className="btn btn--primary btn--wide" onClick={onDone}>
-          Back to the table
+        <button type="button" className="btn btn--go btn--wide" onClick={onDone}>
+          Back to the lobby
         </button>
       </section>
     </div>
