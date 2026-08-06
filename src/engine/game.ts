@@ -20,7 +20,7 @@ import type {
 
 export const FACE_DOWN_COUNT = 3
 export const FACE_UP_COUNT = 3
-export const TURN_SECONDS = 300
+export const TURN_SECONDS = 30
 export const TURN_MS = TURN_SECONDS * 1000
 
 export interface GameConfig {
