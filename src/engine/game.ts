@@ -20,7 +20,7 @@ import type {
 
 export const FACE_DOWN_COUNT = 3
 export const FACE_UP_COUNT = 3
-export const TURN_SECONDS = 20
+export const TURN_SECONDS = 300
 export const TURN_MS = TURN_SECONDS * 1000
 
 export interface GameConfig {
@@ -392,11 +392,14 @@ function checkFinished(state: GameState, player: PlayerState, events: GameEvent[
 }
 
 /**
- * `steps - 1` is how many players an eight-stack skips. Skipping only ever
- * makes sense against someone still at the table, so it's capped at the
- * number of live opponents — beyond that, extra eights are wasted and the
- * turn simply comes back around. (With no stack, steps is always 1: skip
- * nobody, hand straight to the next live player, same as before.)
+ * `steps - 1` is how many players an eight-stack skips. With two or more
+ * live opponents, skips cycle through them in turn order and never land
+ * back on the thrower, no matter how many eights are stacked — three
+ * eights against two opponents skips b, c, b, and hands the turn to c.
+ * With exactly one opponent there's nobody else to land on, so any number
+ * of eights just skips that one seat and the turn comes straight back to
+ * the thrower. (With no stack, steps is always 1: skip nobody, hand
+ * straight to the next live player, same as before.)
  */
 function advanceTurn(state: GameState, steps: number, events: GameEvent[]): void {
   const seats = state.players
@@ -413,19 +416,25 @@ function advanceTurn(state: GameState, steps: number, events: GameEvent[]): void
     if (isLive(seat)) opponents.push(seat)
   }
 
-  const skips = Math.min(steps - 1, opponents.length)
-  for (let i = 0; i < skips; i++) {
-    events.push({ type: 'PlayerSkipped', playerId: opponents[i].playerId })
+  const totalSkips = steps - 1
+
+  if (opponents.length === 0) {
+    state.activePlayerId = seats[start].playerId
+    state.turn++
+    return
   }
 
-  // Full lap, thrower still in the game: it's their turn again. Full lap
-  // but the thrower just went out on that same stack: there's no one to
-  // loop back to, so it wraps to the first opponent instead — the same
-  // seat a stack of exactly one skip short would have landed on.
-  state.activePlayerId =
-    skips === opponents.length && isLive(seats[start])
-      ? seats[start].playerId
-      : opponents[skips % opponents.length].playerId
+  if (opponents.length === 1) {
+    if (totalSkips > 0) events.push({ type: 'PlayerSkipped', playerId: opponents[0].playerId })
+    state.activePlayerId = totalSkips > 0 ? seats[start].playerId : opponents[0].playerId
+    state.turn++
+    return
+  }
+
+  for (let i = 0; i < totalSkips; i++) {
+    events.push({ type: 'PlayerSkipped', playerId: opponents[i % opponents.length].playerId })
+  }
+  state.activePlayerId = opponents[totalSkips % opponents.length].playerId
   state.turn++
 }
 

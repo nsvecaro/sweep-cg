@@ -10,7 +10,7 @@ const board = (activeValue: number | null, forceLower = false, difficulty: 'easy
 })
 
 describe('special cards', () => {
-  it('SPECIAL_ACE — an ace beats anything and leaves only an ace or a two to answer', () => {
+  it('SPECIAL_ACE — an ace beats any ordinary card, but is not wild', () => {
     const state = stateOf({ seats: [{ id: 'a', hand: ['Ah'] }, { id: 'b' }], pile: ['Ks'], deck: [] })
     const result = applyAction(state, { type: 'playCards', playerId: 'a', cardIds: ['h14'] })
 
@@ -22,6 +22,8 @@ describe('special cards', () => {
     expect(canPlayValue(10, board(14))).toBe(false)
     expect(canPlayValue(5, board(14, false, 'easy'))).toBe(false)
     expect(canPlayValue(5, board(14, false, 'medium'))).toBe(true)
+    // Not wild: an ace can't beat a 7's force-lower demand, only 5 and 2 can.
+    expect(canPlayValue(14, board(7, true))).toBe(false)
   })
 
   it('SPECIAL_2 — a two lands on anything and drops the pile back to two', () => {
@@ -102,7 +104,8 @@ describe('special cards', () => {
     expect(result.state.activeValue).toBe(7)
     expect(canPlayValue(9, board(7, true))).toBe(false)
     expect(canPlayValue(4, board(7, true))).toBe(true)
-    expect(canPlayValue(14, board(7, true))).toBe(true)
+    expect(canPlayValue(14, board(7, true))).toBe(false)
+    expect(canPlayValue(10, board(7, true))).toBe(false)
     expect(canPlayValue(2, board(7, true))).toBe(true)
     expect(canPlayValue(5, board(7, true))).toBe(true)
   })
@@ -135,7 +138,7 @@ describe('special cards', () => {
     expect(result.events).toContainEqual({ type: 'PlayerSkipped', playerId: 'b' })
   })
 
-  it('SPECIAL_8 — eights stack: two of them skip two seats and the turn comes back', () => {
+  it('SPECIAL_8 — eights stack: two of them skip both opponents, then the first one plays', () => {
     const state = stateOf({
       seats: [{ id: 'a', hand: ['8h', '8c', 'Kd'] }, { id: 'b' }, { id: 'c' }],
       pile: ['6s'],
@@ -143,7 +146,7 @@ describe('special cards', () => {
     })
     const result = applyAction(state, { type: 'playCards', playerId: 'a', cardIds: ['h8', 'c8'] })
 
-    expect(result.state.activePlayerId).toBe('a')
+    expect(result.state.activePlayerId).toBe('b')
     expect(result.events).toContainEqual({ type: 'PlayerSkipped', playerId: 'b' })
     expect(result.events).toContainEqual({ type: 'PlayerSkipped', playerId: 'c' })
   })
@@ -164,10 +167,11 @@ describe('special cards', () => {
     }
   })
 
-  it('SPECIAL_8 — stacking past every opponent is capped, not looped again', () => {
+  it('SPECIAL_8 — stacking past every opponent cycles through them, never back to the thrower', () => {
     // Three players, two opponents: three eights at once (four would burn the
-    // pile as four of a kind, a different rule entirely) has more skips than
-    // there are seats to skip. It caps at b and c, not a second lap.
+    // pile as four of a kind, a different rule entirely) cycles b, c, b —
+    // then c plays. With two or more opponents it never wraps back to the
+    // thrower, however many eights are stacked.
     const state = stateOf({
       seats: [{ id: 'a', hand: ['8h', '8c', '8s', 'Kd'] }, { id: 'b' }, { id: 'c' }],
       pile: ['6s'],
@@ -176,8 +180,9 @@ describe('special cards', () => {
     const result = applyAction(state, { type: 'playCards', playerId: 'a', cardIds: ['h8', 'c8', 's8'] })
 
     expect(result.error).toBeNull()
-    expect(result.state.activePlayerId).toBe('a')
-    expect(result.events.filter((e) => e.type === 'PlayerSkipped')).toHaveLength(2)
+    expect(result.state.activePlayerId).toBe('c')
+    const skipEvents = result.events.filter((e) => e.type === 'PlayerSkipped')
+    expect(skipEvents.map((e) => e.playerId)).toEqual(['b', 'c', 'b'])
   })
 
   it('SPECIAL_8 — a stack that finishes the thrower’s own hand skips past them, not onto them', () => {

@@ -16,7 +16,7 @@ export function isSpecial(value: number, difficulty: Difficulty): boolean {
 
 /** Cards that ignore the pile's active value entirely. */
 function isWild(value: number, difficulty: Difficulty): boolean {
-  if (value === 2 || value === 14) return true
+  if (value === 2) return true
   return value === 5 && isSpecial(5, difficulty)
 }
 
@@ -38,9 +38,9 @@ export function canPlayValue(value: number, board: Board): boolean {
   const { difficulty, activeValue, forceLower } = board
   const empty = activeValue === null
 
-  if (value === 10) return empty || activeValue < 10
-
   if (forceLower) return value <= 7 || isWild(value, difficulty)
+
+  if (value === 10) return empty || activeValue < 10
 
   if (isWild(value, difficulty)) return true
   if (value === 7 && isSpecial(7, difficulty)) return empty || activeValue <= 7
@@ -51,10 +51,10 @@ export function canPlayValue(value: number, board: Board): boolean {
 
 /**
  * The board state a play leaves behind, before sweeps are resolved.
- * Eights stack: each one skips the next seat still in the game. `skips` is
- * capped downstream at the number of live opponents — you can't skip past
- * everyone else and skip yourself too, so extra eights just bring the turn
- * back around to the thrower.
+ * Eights stack: each one skips the next seat still in the game. With two or
+ * more opponents, `skips` cycles through them and never lands back on the
+ * thrower, however many eights are stacked. With a single opponent there's
+ * nobody else to land on, so the turn returns to the thrower.
  */
 export function applyValueEffect(value: number, count: number, board: Board): {
   activeValue: number
