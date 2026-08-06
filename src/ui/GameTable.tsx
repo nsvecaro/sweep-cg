@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
   RANK_LABEL,
   TURN_MS,
@@ -19,6 +19,8 @@ import { Result } from './Result'
 import { ScreenFx, type Banner, type Blast, type Flight } from './ScreenFx'
 import { shoutFor, type Shout } from './commentary'
 import { demandOf } from './format'
+import { isMuted, playSoundForEvent, playYourTurnCue, subscribeMuted, toggleMuted } from './sound'
+import { vibrate } from './haptics'
 
 const FLIGHT_MS = 440
 const PLAY_STAGGER_MS = 80
@@ -157,6 +159,8 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
     [],
   )
 
+  const muted = useSyncExternalStore(subscribeMuted, isMuted, () => false)
+
   /** Stable per-id ref callbacks — inline closures would detach on every clock tick. */
   const registerSeat = useCallback((id: string) => {
     let cb = seatCallbacks.current.get(id)
@@ -203,6 +207,15 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
     // hand may have been re-sorted, so any survivor now points at the wrong card.
     thrownFrom.current.clear()
   }, [game.turn, game.activePlayerId, viewerId])
+
+  const wasMyTurn = useRef(isMyTurn)
+  useEffect(() => {
+    if (isMyTurn && !wasMyTurn.current) {
+      playYourTurnCue()
+      vibrate(45)
+    }
+    wasMyTurn.current = isMyTurn
+  }, [isMyTurn])
 
   /** Where a player's cards come from, or go to, when we can't see the cards themselves. */
   const zoneRect = useCallback(
@@ -347,6 +360,7 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
 
     for (const entry of fresh) {
       const shout = shoutFor(entry.event, entry.id, game.difficulty, nameOf)
+      playSoundForEvent(entry.event, shout)
       if (shout && (!loudest || shout.force >= loudest.force)) loudest = { ...shout, id: entry.id }
       if (!reduced && pile) cursor = planFlights(entry.event, pile, spawned, reveals, cursor)
     }
@@ -448,6 +462,14 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
           </span>
           <span className="rail__code">{room.lobby?.code}</span>
           <span className="rail__mode">{game.difficulty}</span>
+          <button
+            type="button"
+            className="btn btn--tiny"
+            aria-pressed={muted}
+            onClick={() => toggleMuted()}
+          >
+            {muted ? 'Sound off' : 'Sound on'}
+          </button>
           <LeaveGame
             transport={transport}
             rivals={game.players.filter((p) => !p.isFinished && !p.hasLeft && p.playerId !== viewerId).length}
