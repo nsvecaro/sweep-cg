@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { isValidLobbyCode, normalizeLobbyCode } from '../src/lobby/codes.js'
 import {
   applyCommand,
-  applyDueTimeouts,
+  applyDueRoom,
   emptyRoom,
   viewOf,
   type RoomCommand,
@@ -58,16 +58,16 @@ async function poll(req: VercelRequest, res: VercelResponse) {
 /**
  * Nobody runs a timer for a serverless room, so any client that happens to
  * poll (or send a command) while a deadline has passed enforces it on the
- * table's behalf. Cheap-checks first so an on-time table never pays for a
- * write it doesn't need.
+ * table's behalf — a stalled turn, or a lobby countdown that ran out.
+ * Cheap-checks first so an on-time table never pays for a write it doesn't need.
  */
 async function settleTimeouts(
   code: string,
   loaded: { room: RoomRecord; version: number },
   now: number,
 ): Promise<{ room: RoomRecord; version: number } | null> {
-  if (!applyDueTimeouts(loaded.room, now)) return null
-  return update(code, ({ room }) => applyDueTimeouts(room, now) ?? UNCHANGED)
+  if (!applyDueRoom(loaded.room, now)) return null
+  return update(code, ({ room }) => applyDueRoom(room, now) ?? UNCHANGED)
 }
 
 async function command(req: VercelRequest, res: VercelResponse) {

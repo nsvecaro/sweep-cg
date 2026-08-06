@@ -3,6 +3,7 @@ import { RANK_LABEL } from '@/engine'
 import { LOBBY_CODE_LENGTH, randomUsername, type Result } from '@/lobby'
 import type { SweepTransport } from '@/net/transport'
 import { RankGlyph, SteelBall } from './PlayingCard'
+import { Tutorial } from './Tutorial'
 
 const SPECIALS: [number, string][] = [
   [2, 'wipes the demand'],
@@ -22,6 +23,7 @@ export function MainMenu({ transport, onError }: Props) {
   const [name, setName] = useState(() => randomUsername())
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
+  const [showTutorial, setShowTutorial] = useState(false)
 
   const withName = async (then: () => Promise<Result<unknown>>) => {
     if (busy) return
@@ -39,12 +41,24 @@ export function MainMenu({ transport, onError }: Props) {
   return (
     <main className="screen menu">
       <header className="menu__head">
-        <h1 className="wordmark">
-          <SteelBall className="wordmark__ball" />
-          Sweep
-        </h1>
+        <div className="menu__title">
+          <h1 className="wordmark">
+            <SteelBall className="wordmark__ball" />
+            Sweep
+          </h1>
+          <button
+            type="button"
+            className="btn btn--tiny btn--help"
+            onClick={() => setShowTutorial(true)}
+            aria-label="How to play"
+          >
+            ?
+          </button>
+        </div>
         <p className="menu__thesis">Throw higher than the pile, or eat the whole thing.</p>
       </header>
+
+      {showTutorial && <Tutorial onClose={() => setShowTutorial(false)} />}
 
       <ol className="ranks" aria-label="Special cards">
         {SPECIALS.map(([value, effect]) => (

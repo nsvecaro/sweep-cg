@@ -1,5 +1,18 @@
 import { RANK_LABEL, VALUES, boardOf, canPlayValue, isSpecial } from '@/engine'
-import type { GameEvent, GameState } from '@/engine'
+import type { Difficulty, GameEvent, GameState } from '@/engine'
+
+export interface DifficultyBlurb {
+  id: Difficulty
+  name: string
+  blurb: string
+}
+
+/** The one place difficulty copy lives — the lobby's mode picker and the tutorial both read it. */
+export const DIFFICULTY_MODES: DifficultyBlurb[] = [
+  { id: 'easy', name: 'Easy', blurb: 'Pick your own face-up cards. Only 2, 10 and A misbehave.' },
+  { id: 'medium', name: 'Medium', blurb: 'Same setup, but 5, 7 and 8 wake up too.' },
+  { id: 'hard', name: 'Hard', blurb: 'Face-up cards dealt blind. Everything misbehaves.' },
+]
 
 const WORDS: Record<number, string> = {
   2: 'Two',

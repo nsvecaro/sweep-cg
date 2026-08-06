@@ -35,6 +35,10 @@ export interface SweepTransport {
   addBot(): Promise<Result<PlayerProfile>>
   addLocalPlayer(username: string): Promise<Result<PlayerProfile>>
   removePlayer(playerId: string): Promise<Result<null>>
+  /** Broadcasts the host's rules pick to the whole lobby. */
+  setDifficulty(difficulty: Difficulty): Promise<Result<null>>
+  /** Host-only: begins the shared countdown that ends in `startGame`. */
+  startCountdown(): Promise<Result<null>>
   startGame(difficulty: Difficulty): Promise<Result<null>>
   dispatch(action: GameAction): Promise<Result<null>>
   returnToLobby(): Promise<Result<null>>

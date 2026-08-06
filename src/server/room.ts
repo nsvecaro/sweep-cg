@@ -2,7 +2,7 @@ import { applyAction, createGame } from '../engine/game.js'
 import type { Card, Difficulty, GameAction, GameEvent, GameState } from '../engine/types.js'
 import { normalizeLobbyCode } from '../lobby/codes.js'
 import { randomUsername, sanitizeUsername } from '../lobby/names.js'
-import { MAX_LOBBY_PLAYERS } from '../lobby/types.js'
+import { LOBBY_COUNTDOWN_MS, MAX_LOBBY_PLAYERS } from '../lobby/types.js'
 
 const LOG_LIMIT = 80
 
@@ -18,6 +18,10 @@ export interface RoomRecord {
   hostId: string
   status: 'waiting' | 'playing'
   seats: RoomSeat[]
+  /** The host's live rules pick — every member sees this, only the host can change it. */
+  difficulty: Difficulty
+  /** Wall-clock deadline for the host's "deal" countdown; null when none is pending. */
+  countdownEndsAt: number | null
   game: GameState | null
   log: { id: number; event: GameEvent }[]
   logSeq: number
@@ -29,6 +33,8 @@ export type RoomCommand =
   | { type: 'setUsername'; username: string }
   | { type: 'addSeat'; username: string }
   | { type: 'removePlayer'; targetId: string }
+  | { type: 'setDifficulty'; difficulty: Difficulty }
+  | { type: 'beginCountdown' }
   | { type: 'start'; difficulty: Difficulty }
   | { type: 'action'; action: GameAction }
   | { type: 'returnToLobby' }
@@ -52,6 +58,8 @@ export function emptyRoom(code: string, hostId: string, now: number): RoomRecord
     hostId,
     status: 'waiting',
     seats: [],
+    difficulty: 'medium',
+    countdownEndsAt: null,
     game: null,
     log: [],
     logSeq: 0,
@@ -76,6 +84,10 @@ export function applyCommand(
       return addSeat(room, command.username, ctx)
     case 'removePlayer':
       return removePlayer(room, command.targetId, ctx)
+    case 'setDifficulty':
+      return setDifficulty(room, command.difficulty, ctx)
+    case 'beginCountdown':
+      return beginCountdown(room, ctx)
     case 'start':
       return start(room, command.difficulty, ctx)
     case 'action':
@@ -96,6 +108,7 @@ function join(room: RoomRecord, username: string, ctx: CommandContext): CommandO
     return { ok: true, room }
   }
   if (room.status === 'playing') return fail('That game has already started')
+  if (room.countdownEndsAt !== null) return fail('The host is dealing — try again in a moment')
   if (room.seats.length >= MAX_LOBBY_PLAYERS) return fail('That table is full')
 
   room.seats.push({
@@ -126,6 +139,7 @@ function addSeat(room: RoomRecord, username: string, ctx: CommandContext): Comma
     username: sanitizeUsername(username) || randomUsername(),
     ownerId: ctx.callerId,
   })
+  room.countdownEndsAt = null
   return { ok: true, room }
 }
 
@@ -136,6 +150,23 @@ function removePlayer(room: RoomRecord, targetId: string, ctx: CommandContext): 
   if (!room.seats.some((s) => s.playerId === targetId)) return fail('No such player')
 
   room.seats = room.seats.filter((s) => s.playerId !== targetId)
+  room.countdownEndsAt = null
+  return { ok: true, room }
+}
+
+function setDifficulty(room: RoomRecord, difficulty: Difficulty, ctx: CommandContext): CommandOutcome {
+  if (room.hostId !== ctx.callerId) return fail('Only the host can set the rules')
+  if (room.status === 'playing') return fail('The game has already started')
+  room.difficulty = difficulty
+  room.countdownEndsAt = null
+  return { ok: true, room }
+}
+
+function beginCountdown(room: RoomRecord, ctx: CommandContext): CommandOutcome {
+  if (room.hostId !== ctx.callerId) return fail('Only the host can deal')
+  if (room.status === 'playing') return fail('The game has already started')
+  if (room.seats.length < 2) return fail('Sweep needs at least two players')
+  room.countdownEndsAt = ctx.now + LOBBY_COUNTDOWN_MS
   return { ok: true, room }
 }
 
@@ -145,6 +176,7 @@ function start(room: RoomRecord, difficulty: Difficulty, ctx: CommandContext): C
   if (room.seats.length < 2) return fail('Sweep needs at least two players')
 
   room.status = 'playing'
+  room.countdownEndsAt = null
   room.game = createGame({
     difficulty,
     players: room.seats.map((s) => ({ playerId: s.playerId, name: s.username })),
@@ -192,6 +224,31 @@ export function applyDueTimeouts(input: RoomRecord, now: number): RoomRecord | n
   return room
 }
 
+/**
+ * Called lazily from the API layer, exactly like `applyDueTimeouts` — nothing
+ * runs a background timer for a serverless room, so whichever client happens
+ * to poll (or send a command) once the deadline passes deals the game on
+ * everyone's behalf. Every path that shrinks or changes the lobby already
+ * clears `countdownEndsAt`, so by the time this fires the seat count is
+ * guaranteed still good.
+ */
+export function applyDueCountdown(input: RoomRecord, now: number): RoomRecord | null {
+  const endsAt = input.countdownEndsAt
+  if (typeof endsAt !== 'number' || now < endsAt) return null
+
+  const room: RoomRecord = structuredClone(input)
+  room.updatedAt = now
+  const outcome = start(room, room.difficulty ?? 'medium', { callerId: room.hostId, now })
+  return outcome.ok ? outcome.room : null
+}
+
+/** Runs both of a room's lazy due-checks in one pass, for the one call site that needs both. */
+export function applyDueRoom(input: RoomRecord, now: number): RoomRecord | null {
+  const afterCountdown = applyDueCountdown(input, now)
+  const afterTimeout = applyDueTimeouts(afterCountdown ?? input, now)
+  return afterTimeout ?? afterCountdown
+}
+
 function returnToLobby(room: RoomRecord, ctx: CommandContext): CommandOutcome {
   if (!room.seats.some((s) => s.ownerId === ctx.callerId)) return fail('You are not at this table')
   // Only once the hand is over — otherwise one player could wipe a live game,
@@ -235,6 +292,8 @@ export interface RoomView {
   code: string
   hostId: string
   status: 'waiting' | 'playing'
+  difficulty: Difficulty
+  countdownEndsAt: number | null
   members: { playerId: string; username: string }[]
   ownedIds: string[]
   game: GameState | null
@@ -257,6 +316,8 @@ export function viewOf(room: RoomRecord, callerId: string, version: number): Roo
     code: room.code,
     hostId: room.hostId,
     status: room.status,
+    difficulty: room.difficulty ?? 'medium',
+    countdownEndsAt: typeof room.countdownEndsAt === 'number' ? room.countdownEndsAt : null,
     members: room.seats.map((s) => ({ playerId: s.playerId, username: s.username })),
     ownedIds,
     log: room.log,

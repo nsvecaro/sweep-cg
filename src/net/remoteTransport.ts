@@ -4,7 +4,10 @@ import type { RoomView } from '@/server/room'
 import type { LogEntry, RoomSnapshot, SweepTransport } from './transport'
 
 const POLL_MS = 1100
-const IDLE_POLL_MS = 4000
+// A lobby waiting to deal still needs to notice a host-started countdown quickly —
+// that pending setTimeout is scheduled before the countdown exists, so a slow idle
+// cadence here means a guest's first sight of "starting…" lands most of the way through it.
+const IDLE_POLL_MS = 1200
 const ID_KEY = 'sweep:playerId'
 const ROOM_KEY = 'sweep:room'
 
@@ -75,6 +78,8 @@ export class RemoteTransport implements SweepTransport {
           hostId: view.hostId,
           playerIds: view.members.map((m) => m.playerId),
           status: view.status,
+          difficulty: view.difficulty,
+          countdownEndsAt: view.countdownEndsAt,
         }
       : null
 
@@ -137,6 +142,16 @@ export class RemoteTransport implements SweepTransport {
 
   async removePlayer(playerId: string): Promise<Result<null>> {
     const sent = await this.send({ type: 'removePlayer', targetId: playerId })
+    return sent.ok ? ok(null) : fail(sent.error)
+  }
+
+  async setDifficulty(difficulty: Difficulty): Promise<Result<null>> {
+    const sent = await this.send({ type: 'setDifficulty', difficulty })
+    return sent.ok ? ok(null) : fail(sent.error)
+  }
+
+  async startCountdown(): Promise<Result<null>> {
+    const sent = await this.send({ type: 'beginCountdown' })
     return sent.ok ? ok(null) : fail(sent.error)
   }
 

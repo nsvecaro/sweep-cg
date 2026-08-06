@@ -83,6 +83,11 @@
   color: var(--dmd);
 }
 
+.headline--countdown {
+  text-align: center;
+  text-shadow: 0 0 20px rgba(255, 167, 36, 0.5);
+}
+
 .eyebrow,
 .field__label {
   font-family: var(--font-ui);
@@ -252,6 +257,24 @@ input::placeholder {
   gap: 8px;
 }
 
+.menu__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.btn--help {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: var(--ui-md);
+}
+
 .menu__thesis {
   margin: 0;
   font-size: var(--ui-md);
@@ -412,6 +435,54 @@ input::placeholder {
 }
 
 .mode__blurb {
+  font-size: var(--ui-xs);
+  line-height: 1.6;
+  color: var(--dust);
+}
+
+.mode__specials {
+  font-size: var(--ui-xs);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--ice);
+}
+
+.specials {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border: 2px solid var(--line);
+  background-image: var(--studs);
+}
+
+.specials__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.specials__item:first-child {
+  border-top: 0;
+}
+
+.specials__rank {
+  flex: none;
+  display: block;
+  height: 20px;
+  color: var(--dmd);
+  filter: drop-shadow(0 0 8px rgba(255, 167, 36, 0.6));
+}
+
+.specials__rank svg {
+  height: 100%;
+  width: auto;
+}
+
+.specials__effect {
   font-size: var(--ui-xs);
   line-height: 1.6;
   color: var(--dust);
@@ -1602,6 +1673,12 @@ input::placeholder {
   flex-direction: column;
   gap: 14px;
   animation: dropIn 220ms var(--spring) both;
+}
+
+.overlay__panel--wide {
+  width: min(560px, 100%);
+  max-height: 86vh;
+  overflow-y: auto;
 }
 
 @keyframes dropIn {

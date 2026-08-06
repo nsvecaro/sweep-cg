@@ -8,7 +8,15 @@ import {
   type GameEvent,
   type GameState,
 } from '@/engine'
-import { LobbyService, MAX_LOBBY_PLAYERS, randomUsername, type Lobby, type PlayerProfile, type Result } from '@/lobby'
+import {
+  LOBBY_COUNTDOWN_MS,
+  LobbyService,
+  MAX_LOBBY_PLAYERS,
+  randomUsername,
+  type Lobby,
+  type PlayerProfile,
+  type Result,
+} from '@/lobby'
 import type { LogEntry, RoomSnapshot, SweepTransport } from './transport'
 
 const BOT_DELAY_MS = 750
@@ -34,6 +42,7 @@ export class LocalTransport implements SweepTransport {
   private listeners = new Set<(snapshot: RoomSnapshot) => void>()
   private botTimer: ReturnType<typeof setTimeout> | null = null
   private timeoutTimer: ReturnType<typeof setTimeout> | null = null
+  private countdownTimer: ReturnType<typeof setTimeout> | null = null
 
   snapshot(): RoomSnapshot {
     return {
@@ -121,8 +130,42 @@ export class LocalTransport implements SweepTransport {
     if (!result.ok) return fail(result.error)
     this.botIds.delete(playerId)
     this.ownedIds.delete(playerId)
+    this.clearCountdownTimer()
     this.publish()
     return ok(null)
+  }
+
+  async setDifficulty(difficulty: Difficulty): Promise<Result<null>> {
+    const lobby = this.requireLobby()
+    if (!lobby.ok) return fail(lobby.error)
+    const result = this.lobbyService.setDifficulty(lobby.value.code, difficulty)
+    if (!result.ok) return fail(result.error)
+    this.clearCountdownTimer()
+    this.publish()
+    return ok(null)
+  }
+
+  async startCountdown(): Promise<Result<null>> {
+    const lobby = this.requireLobby()
+    if (!lobby.ok) return fail(lobby.error)
+    const result = this.lobbyService.beginCountdown(lobby.value.code, Date.now() + LOBBY_COUNTDOWN_MS)
+    if (!result.ok) return fail(result.error)
+    this.publish()
+
+    this.clearCountdownTimer()
+    const code = lobby.value.code
+    this.countdownTimer = setTimeout(() => {
+      this.countdownTimer = null
+      this.finishCountdown(code)
+    }, LOBBY_COUNTDOWN_MS)
+    return ok(null)
+  }
+
+  /** Fires once the shared countdown reaches zero — deals, unless something cancelled it first. */
+  private finishCountdown(code: string): void {
+    const lobby = this.lobbyService.getLobby(code)
+    if (!lobby || lobby.countdownEndsAt === null) return
+    void this.startGame(lobby.difficulty)
   }
 
   async startGame(difficulty: Difficulty): Promise<Result<null>> {
@@ -180,6 +223,7 @@ export class LocalTransport implements SweepTransport {
     }
     this.clearBotTimer()
     this.clearTimeoutTimer()
+    this.clearCountdownTimer()
     if (this.code) this.lobbyService.leaveLobby(this.code, this.selfId)
     this.code = null
     this.game = null
@@ -209,6 +253,11 @@ export class LocalTransport implements SweepTransport {
   private clearTimeoutTimer(): void {
     if (this.timeoutTimer !== null) clearTimeout(this.timeoutTimer)
     this.timeoutTimer = null
+  }
+
+  private clearCountdownTimer(): void {
+    if (this.countdownTimer !== null) clearTimeout(this.countdownTimer)
+    this.countdownTimer = null
   }
 
   /**

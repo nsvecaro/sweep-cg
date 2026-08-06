@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { TURN_MS } from '@/engine/game'
-import { applyCommand, applyDueTimeouts, emptyRoom, viewOf, type RoomCommand, type RoomRecord } from '@/server/room'
+import { LOBBY_COUNTDOWN_MS } from '@/lobby'
+import {
+  applyCommand,
+  applyDueCountdown,
+  applyDueTimeouts,
+  emptyRoom,
+  viewOf,
+  type RoomCommand,
+  type RoomRecord,
+} from '@/server/room'
 
 const NOW = 1_700_000_000_000
 
@@ -23,6 +32,13 @@ const dealt = () => {
   room = run(room, { type: 'join', username: 'Ana' }, 'host')
   room = run(room, { type: 'join', username: 'Bo' }, 'guest')
   return run(room, { type: 'start', difficulty: 'hard' }, 'host')
+}
+
+/** A two-player table still waiting in the lobby. */
+const waiting = () => {
+  let room = emptyRoom('TABLE', 'host', NOW)
+  room = run(room, { type: 'join', username: 'Ana' }, 'host')
+  return run(room, { type: 'join', username: 'Bo' }, 'guest')
 }
 
 describe('ONLINE room', () => {
@@ -211,5 +227,68 @@ describe('ONLINE room', () => {
     expect(settled.game!.activePlayerId).not.toBe(active)
     expect(settled.log.map((e) => e.event.type)).toContain('PlayerTimedOut')
     expect(settled.game!.turnEndsAt).toBe(dueAt + TURN_MS)
+  })
+
+  it('ROOM_DIFFICULTY — only the host can set the rules, and it broadcasts to the whole lobby', () => {
+    const room = waiting()
+
+    expect(refuse(room, { type: 'setDifficulty', difficulty: 'hard' }, 'guest')).toBe(
+      'Only the host can set the rules',
+    )
+
+    const picked = run(room, { type: 'setDifficulty', difficulty: 'hard' }, 'host')
+    expect(picked.difficulty).toBe('hard')
+    expect(viewOf(picked, 'guest', 1).difficulty).toBe('hard')
+  })
+
+  it('ROOM_COUNTDOWN — only the host can start the deal countdown, and it needs two players', () => {
+    let room = emptyRoom('TABLE', 'host', NOW)
+    room = run(room, { type: 'join', username: 'Ana' }, 'host')
+
+    expect(refuse(room, { type: 'beginCountdown' }, 'host')).toBe('Sweep needs at least two players')
+
+    room = run(room, { type: 'join', username: 'Bo' }, 'guest')
+    expect(refuse(room, { type: 'beginCountdown' }, 'guest')).toBe('Only the host can deal')
+
+    const counting = run(room, { type: 'beginCountdown' }, 'host')
+    expect(counting.countdownEndsAt).toBe(NOW + LOBBY_COUNTDOWN_MS)
+    expect(counting.status).toBe('waiting')
+  })
+
+  it('ROOM_COUNTDOWN — nobody new can join while the deal countdown is running', () => {
+    const room = run(waiting(), { type: 'beginCountdown' }, 'host')
+
+    expect(refuse(room, { type: 'join', username: 'Cy' }, 'latecomer')).toBe(
+      'The host is dealing — try again in a moment',
+    )
+  })
+
+  it('ROOM_COUNTDOWN — removing a player cancels a pending countdown', () => {
+    let room = emptyRoom('TABLE', 'host', NOW)
+    room = run(room, { type: 'join', username: 'Ana' }, 'host')
+    room = run(room, { type: 'join', username: 'Bo' }, 'guest')
+    room = run(room, { type: 'addSeat', username: 'Kid' }, 'host')
+    room = run(room, { type: 'beginCountdown' }, 'host')
+    expect(room.countdownEndsAt).not.toBeNull()
+
+    const after = run(room, { type: 'removePlayer', targetId: 'guest' }, 'host')
+    expect(after.countdownEndsAt).toBeNull()
+  })
+
+  it('ROOM_COUNTDOWN — applyDueCountdown does nothing before the deadline', () => {
+    const room = run(waiting(), { type: 'beginCountdown' }, 'host')
+    expect(applyDueCountdown(room, room.countdownEndsAt! - 1)).toBeNull()
+  })
+
+  it('ROOM_COUNTDOWN — applyDueCountdown deals once the deadline passes, using the host’s chosen rules', () => {
+    let room = run(waiting(), { type: 'setDifficulty', difficulty: 'hard' }, 'host')
+    room = run(room, { type: 'beginCountdown' }, 'host')
+
+    const dealtRoom = applyDueCountdown(room, room.countdownEndsAt!)!
+
+    expect(dealtRoom).not.toBeNull()
+    expect(dealtRoom.status).toBe('playing')
+    expect(dealtRoom.countdownEndsAt).toBeNull()
+    expect(dealtRoom.game!.difficulty).toBe('hard')
   })
 })
