@@ -83,8 +83,10 @@ export function describeEvent(event: GameEvent, nameOf: (id: string) => string):
       return `${nameOf(event.playerId)} ran out of time`
     case 'GameOver':
       return event.loserId ? `${nameOf(event.loserId)} is left holding the cards` : 'Game over'
+    case 'BlindFlipMissed':
+      return `${nameOf(event.playerId)} flipped a ${RANK_LABEL[event.card.value]} — pile eaten`
     case 'PlayRejected':
-      return event.reason === 'Blind card missed' ? `${nameOf(event.playerId)} missed the blind flip` : null
+      return null
     case 'CardsDrawn':
       return null
   }

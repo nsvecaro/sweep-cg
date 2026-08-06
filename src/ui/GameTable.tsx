@@ -222,16 +222,24 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
    * Turns one event into the cards you see move. Shared by the live log and by
    * the pass-and-play replay, which shows the incoming player what they missed.
    */
+  /**
+   * `baseDelay` lets one event's flight start only once an earlier one in the
+   * same batch has landed — a blind flip that misses fires `BlindFlipMissed`
+   * then `PileTaken` in the same action, and the card has to visibly reach
+   * the pile before the pickup ghosts carry the pile away. Returns the delay
+   * the next event in the batch should start from.
+   */
   const planFlights = useCallback(
-    (event: GameEvent, pile: Rect, spawned: Flight[], reveals: Map<string, number>) => {
+    (event: GameEvent, pile: Rect, spawned: Flight[], reveals: Map<string, number>, baseDelay: number): number => {
       if (event.type === 'CardsPlayed') {
         const cards = event.cards
+        let latest = baseDelay
         cards.forEach((card, i) => {
           const depth = cards.length - 1 - i
           const { jx, jy, jr } = jitterOf(card, depth)
           const from = thrownFrom.current.get(card.id) ?? zoneRect(event.playerId, pile.w)
           thrownFrom.current.delete(card.id)
-          const delay = i * PLAY_STAGGER_MS
+          const delay = baseDelay + i * PLAY_STAGGER_MS
           spawned.push({
             id: `f${flightSeq.current++}`,
             card,
@@ -248,7 +256,29 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
             duration: FLIGHT_MS,
           })
           reveals.set(card.id, delay + FLIGHT_MS)
+          latest = Math.max(latest, delay + FLIGHT_MS)
         })
+        return latest
+      } else if (event.type === 'BlindFlipMissed') {
+        const card = event.card
+        const from = thrownFrom.current.get(card.id) ?? zoneRect(event.playerId, pile.w)
+        thrownFrom.current.delete(card.id)
+        spawned.push({
+          id: `f${flightSeq.current++}`,
+          card,
+          special: isSpecial(card.value, difficultyRef.current),
+          x0: from ? from.cx : pile.cx,
+          y0: from ? from.cy : pile.cy - 90,
+          x1: pile.cx,
+          y1: pile.cy,
+          r0: 0,
+          r1: 0,
+          s0: from ? from.w / pile.w : 0.6,
+          s1: 1,
+          delay: baseDelay,
+          duration: FLIGHT_MS,
+        })
+        return baseDelay + FLIGHT_MS
       } else if (event.type === 'PileTaken') {
         const to = zoneRect(event.playerId, pile.w)
         const ghosts = Math.min(event.count, MAX_PICKUP_GHOSTS)
@@ -266,11 +296,13 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
             r1: 0,
             s0: 1,
             s1: to ? to.w / pile.w : 0.6,
-            delay: i * PICKUP_STAGGER_MS,
+            delay: baseDelay + i * PICKUP_STAGGER_MS,
             duration: FLIGHT_MS,
           })
         }
+        return baseDelay + Math.max(0, ghosts - 1) * PICKUP_STAGGER_MS + FLIGHT_MS
       }
+      return baseDelay
     },
     [zoneRect],
   )
@@ -311,11 +343,12 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
     const spawned: Flight[] = []
     const reveals = new Map<string, number>()
     let loudest: Banner | null = null
+    let cursor = 0
 
     for (const entry of fresh) {
       const shout = shoutFor(entry.event, entry.id, game.difficulty, nameOf)
       if (shout && (!loudest || shout.force >= loudest.force)) loudest = { ...shout, id: entry.id }
-      if (!reduced && pile) planFlights(entry.event, pile, spawned, reveals)
+      if (!reduced && pile) cursor = planFlights(entry.event, pile, spawned, reveals, cursor)
     }
 
     // The screen reacts when the cards actually land, not when the packet arrives.
@@ -350,7 +383,7 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
     if (entry && pile && !reduced) {
       const spawned: Flight[] = []
       const reveals = new Map<string, number>()
-      planFlights(entry.event, pile, spawned, reveals)
+      planFlights(entry.event, pile, spawned, reveals, 0)
       runFlights(spawned, reveals)
     }
     onReplayConsumed?.()
@@ -517,9 +550,14 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
                         <button
                           type="button"
                           className="card card--back card--tappable card--flip"
-                          onClick={() =>
-                            void send(transport.dispatch({ type: 'playFaceDownCard', playerId: viewerId, cardId: down.id }))
-                          }
+                          ref={registerCard(down.id)}
+                          onClick={() => {
+                            const rect = rectOf(cardRefs.current.get(down.id))
+                            if (rect) thrownFrom.current.set(down.id, rect)
+                            void send(
+                              transport.dispatch({ type: 'playFaceDownCard', playerId: viewerId, cardId: down.id }),
+                            )
+                          }}
                         >
                           <span className="card__count">flip</span>
                         </button>

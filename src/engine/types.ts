@@ -57,6 +57,8 @@ export type GameEvent =
   | { type: 'PileSwept'; playerId: string; cards: Card[]; reason: 'ten' | 'quad' }
   | { type: 'PlayRejected'; playerId: string; reason: string }
   | { type: 'PileTaken'; playerId: string; count: number }
+  /** A blind flip that couldn't beat the pile — the card is revealed before it and the pile go to the flipper's hand. */
+  | { type: 'BlindFlipMissed'; playerId: string; card: Card }
   | { type: 'CardsDrawn'; playerId: string; count: number }
   | { type: 'PlayerSkipped'; playerId: string }
   | { type: 'PlayerFinished'; playerId: string; place: number }

@@ -266,20 +266,21 @@ function playFaceDownCard(
 
   const card = taken[0]
   next.lastReveal = card
+  next.pile.push(card)
 
   if (!canPlayValue(card.value, boardOf(next))) {
-    events.push({ type: 'PlayRejected', playerId: player.playerId, reason: 'Blind card missed' })
-    player.hand.push(card, ...next.pile)
+    events.push({ type: 'BlindFlipMissed', playerId: player.playerId, card })
+    const count = next.pile.length
+    player.hand.push(...next.pile)
     player.hand.sort(byValue)
-    events.push({ type: 'PileTaken', playerId: player.playerId, count: next.pile.length + 1 })
     next.pile = []
     clearBoard(next)
+    events.push({ type: 'PileTaken', playerId: player.playerId, count })
     advanceTurn(next, 1, events)
     settle(next, events)
     return { state: next, events, error: null }
   }
 
-  next.pile.push(card)
   resolvePlay(next, player, [card], card.value, events)
   return { state: next, events, error: null }
 }

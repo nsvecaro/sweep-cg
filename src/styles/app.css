@@ -924,10 +924,20 @@ input::placeholder {
 }
 
 .ribbon__breakLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   font-size: var(--ui-xs);
   line-height: 1.2;
   letter-spacing: 1px;
   text-transform: uppercase;
+}
+
+/* The specific card a blind flip revealed, sat right before "took N". */
+.ribbon__breakReveal {
+  height: 9px;
+  width: auto;
+  color: currentColor;
 }
 
 .ribbon__breakWho {

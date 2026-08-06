@@ -20,6 +20,8 @@ interface Break {
   reason: 'ten' | 'quad' | 'taken'
   count: number
   who: string
+  /** Set when a 'taken' break was a blind flip that missed — the card everyone saw. */
+  revealed?: number
 }
 
 interface Group {
@@ -34,8 +36,15 @@ const HISTORY_LIMIT = 3
 
 function breaksFrom(log: LogEntry[], nameOf: (id: string) => string): Break[] {
   const out: Break[] = []
+  // A missed blind flip fires BlindFlipMissed immediately before the PileTaken
+  // it causes — carry its value forward to label that one break with it.
+  let revealed: number | undefined
   for (const entry of log) {
     const event = entry.event
+    if (event.type === 'BlindFlipMissed') {
+      revealed = event.card.value
+      continue
+    }
     if (event.type === 'PileSwept') {
       out.push({
         kind: 'break',
@@ -51,8 +60,10 @@ function breaksFrom(log: LogEntry[], nameOf: (id: string) => string): Break[] {
         reason: 'taken',
         count: event.count,
         who: nameOf(event.playerId),
+        revealed,
       })
     }
+    revealed = undefined
   }
   return out.slice(-HISTORY_LIMIT)
 }
@@ -113,6 +124,13 @@ export function PileRibbon({
         {history.map((item) => (
           <li key={item.key} className={`ribbon__break ribbon__break--${item.reason}`}>
             <span className="ribbon__breakLabel">
+              {item.revealed !== undefined && (
+                <RankGlyph
+                  value={item.revealed}
+                  className="ribbon__breakReveal"
+                  label={`flipped ${RANK_LABEL[item.revealed]}`}
+                />
+              )}
               {item.reason === 'taken' ? 'took' : item.reason === 'quad' ? 'quad' : 'burnt'} {item.count}
             </span>
             <span className="ribbon__breakWho">{item.who}</span>

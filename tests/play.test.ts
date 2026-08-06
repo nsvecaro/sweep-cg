@@ -195,7 +195,8 @@ describe('PlayFaceDownCard', () => {
     expect(seat(result.state, 'a').hand).toHaveLength(3)
     expect(result.state.pile).toHaveLength(0)
     expect(result.state.activePlayerId).toBe('b')
-    expect(result.events).toContainEqual(expect.objectContaining({ type: 'PlayRejected' }))
+    expect(result.events).toContainEqual({ type: 'BlindFlipMissed', playerId: 'a', card: card('4c') })
+    expect(result.events).toContainEqual({ type: 'PileTaken', playerId: 'a', count: 3 })
   })
 
   it('ENDGAME — a blind ten still sweeps and hands the player another turn', () => {

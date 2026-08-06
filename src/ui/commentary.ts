@@ -1,5 +1,5 @@
 import type { Difficulty, GameEvent } from '@/engine'
-import { isSpecial } from '@/engine'
+import { RANK_LABEL, isSpecial } from '@/engine'
 
 /**
  * The cabinet's running mouth. Every line is picked from the log entry's id, so
@@ -42,12 +42,18 @@ const TAKE = [
   'THAT IS YOURS NOW',
   'ENJOY THE PAPERWORK',
 ]
-const BLIND = ['GAMBLED. LOST.', 'BLIND FLIP, BLIND LUCK', 'SHOULD HAVE LOOKED']
+const BLIND_MISS = [
+  (rank: string) => `FLIPPED A ${rank.toUpperCase()} AND EAT THE PILE`,
+  (rank: string) => `${rank.toUpperCase()}?? EAT THE WHOLE PILE`,
+  (rank: string) => `SHOULD HAVE LOOKED. ${rank.toUpperCase()} EATS THE PILE`,
+  (rank: string) => `BLIND ${rank.toUpperCase()}. IT'S ALL YOURS NOW`,
+  (rank: string) => `GAMBLED ON A ${rank.toUpperCase()}. LOST THE WHOLE PILE`,
+]
 const TIME = ['FELL ASLEEP', 'TOO SLOW', 'THE CLOCK WINS', 'TIME. UP.']
 const DONE = ['OUT! CLEAN HANDS', 'GONE. LEGEND.', 'EMPTY HANDED, HAPPY']
 
 /** Deterministic and stable: the same entry always yields the same line. */
-function pick(lines: string[], seed: number): string {
+function pick<T>(lines: T[], seed: number): T {
   const hash = (seed * 2654435761) >>> 0
   return lines[hash % lines.length]
 }
@@ -92,12 +98,15 @@ export function shoutFor(
         tone: 'take',
         force: 2,
       }
-    case 'PlayRejected':
-      // A missed blind flip also emits PileTaken. Outranking it keeps the
-      // funnier half of the same moment on screen.
-      return event.reason === 'Blind card missed'
-        ? { who: nameOf(event.playerId), text: pick(BLIND, seed), tone: 'take', force: 3 }
-        : null
+    case 'BlindFlipMissed':
+      // Also emits PileTaken right after. Outranking it keeps the funnier
+      // half of the same moment — the one that names the card — on screen.
+      return {
+        who: nameOf(event.playerId),
+        text: pick(BLIND_MISS, seed)(RANK_LABEL[event.card.value]),
+        tone: 'take',
+        force: 3,
+      }
     case 'PlayerTimedOut':
       return { who: nameOf(event.playerId), text: pick(TIME, seed), tone: 'time', force: 2 }
     case 'PlayerFinished':
