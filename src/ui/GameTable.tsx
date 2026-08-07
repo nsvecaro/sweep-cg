@@ -16,12 +16,36 @@ import { CardBack, Digits, EmptySlot, PlayingCard, RankGlyph, SteelBall } from '
 import { PileRibbon } from './PileRibbon'
 import { PlayLog, Ticker } from './PlayLog'
 import { Result } from './Result'
-import { ScreenFx, type Banner, type Blast, type Flight } from './ScreenFx'
+import { ScreenFx, type Banner, type Blast, type Finale, type Impact, type Flight, type Pulse } from './ScreenFx'
 import { shoutFor, type Shout } from './commentary'
 import { EmoteBubbles, type EmoteBubble } from './EmoteFx'
 import { EmotePicker } from './EmotePicker'
+import { FinisherZone } from './FinisherZone'
+import {
+  FINALE_MS,
+  GRADE_BUZZ,
+  GRADE_FORCE,
+  GRADE_LABEL,
+  RESULT_DELAY_MS,
+  SLAM_MS,
+  SLAM_STAGGER_MS,
+  endingFor,
+  finisherFor,
+  missLine,
+  type FinisherGrade,
+} from './finisher'
 import { demandOf } from './format'
-import { isMuted, playSoundForEvent, playYourTurnCue, subscribeMuted, toggleMuted } from './sound'
+import {
+  isMuted,
+  playFinaleHit,
+  playFinaleMiss,
+  playFinisherStinger,
+  playSlam,
+  playSoundForEvent,
+  playYourTurnCue,
+  subscribeMuted,
+  toggleMuted,
+} from './sound'
 import { vibrate } from './haptics'
 
 const FLIGHT_MS = 440
@@ -109,9 +133,16 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
   const [selected, setSelected] = useState<string[]>([])
   const [flights, setFlights] = useState<Flight[]>([])
   const [blasts, setBlasts] = useState<Blast[]>([])
+  const [pulses, setPulses] = useState<Pulse[]>([])
   const [banner, setBanner] = useState<Banner | null>(null)
   const [flash, setFlash] = useState<{ id: number; tone: Shout['tone'] } | null>(null)
-  const [quake, setQuake] = useState<{ id: number; force: number } | null>(null)
+  const [impactFrame, setImpactFrame] = useState<Impact | null>(null)
+  const [finale, setFinale] = useState<Finale | null>(null)
+  /** Set briefly when a slam lands, so the pile itself takes the hit. */
+  const [pileSlam, setPileSlam] = useState(0)
+  /** The results panel is held back until the ending has had the screen. */
+  const [showResult, setShowResult] = useState(false)
+  const [quake, setQuake] = useState<{ id: number; force: number; big?: boolean } | null>(null)
   const [revealAt, setRevealAt] = useState<Map<string, number>>(EMPTY_REVEALS)
   const [emoteBubbles, setEmoteBubbles] = useState<EmoteBubble[]>([])
 
@@ -122,6 +153,15 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
   const lastEmoteId = useRef(-1)
   const seenEmotes = useRef(false)
   const flightSeq = useRef(0)
+  /** Finisher effects fire on your gesture, before any log entry exists — negative ids
+      so they can never collide with the log-id keyed blasts and banners. */
+  const finisherSeq = useRef(0)
+  /** Cards mid-slam. `planFlights` reads this to know a throw is a finisher. */
+  const slamIds = useRef<Set<string>>(new Set())
+  /** The grade of a finisher already dispatched, waiting for its cards to land. */
+  const pendingEnding = useRef<FinisherGrade | null>(null)
+  /** When the running animation finishes — the results panel queues behind it. */
+  const busyUntil = useRef(0)
   const revealBatch = useRef(0)
   const timers = useRef<number[]>([])
 
@@ -272,16 +312,22 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
       if (event.type === 'CardsPlayed') {
         const cards = event.cards
         let latest = baseDelay
+        // A finisher throw doesn't drift in — it slams, all cards arriving as
+        // one hit, so the ending has a single frame to detonate on.
+        const slam = cards.some((card) => slamIds.current.has(card.id))
+        const stagger = slam ? SLAM_STAGGER_MS : PLAY_STAGGER_MS
+        const travel = slam ? SLAM_MS : FLIGHT_MS
         cards.forEach((card, i) => {
           const depth = cards.length - 1 - i
           const { jx, jy, jr } = jitterOf(card, depth)
           const from = thrownFrom.current.get(card.id) ?? zoneRect(event.playerId, pile.w)
           thrownFrom.current.delete(card.id)
-          const delay = baseDelay + i * PLAY_STAGGER_MS
+          const delay = baseDelay + i * stagger
           spawned.push({
             id: `f${flightSeq.current++}`,
             card,
             special: isSpecial(card.value, difficultyRef.current),
+            slam,
             x0: from ? from.cx : pile.cx,
             y0: from ? from.cy : pile.cy - 90,
             x1: pile.cx + jx,
@@ -291,10 +337,10 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
             s0: from ? from.w / pile.w : 0.6,
             s1: 1,
             delay,
-            duration: FLIGHT_MS,
+            duration: travel,
           })
-          reveals.set(card.id, delay + FLIGHT_MS)
-          latest = Math.max(latest, delay + FLIGHT_MS)
+          reveals.set(card.id, delay + travel)
+          latest = Math.max(latest, delay + travel)
         })
         return latest
       } else if (event.type === 'BlindFlipMissed') {
@@ -382,16 +428,58 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
     const reveals = new Map<string, number>()
     let loudest: Banner | null = null
     let cursor = 0
+    /** One small answer per play, fired when that play's own cards land. */
+    const beats: { pulse: Pulse; at: number; mine: boolean }[] = []
 
     for (const entry of fresh) {
       const shout = shoutFor(entry.event, entry.id, game.difficulty, nameOf)
       playSoundForEvent(entry.event, shout)
       if (shout && (!loudest || shout.force >= loudest.force)) loudest = { ...shout, id: entry.id }
       if (!reduced && pile) cursor = planFlights(entry.event, pile, spawned, reveals, cursor)
+
+      // Plays are the events that can otherwise pass in silence — the loud ones
+      // already earn a blast. Everything that reaches the pile gets this.
+      const event = entry.event
+      if (pile && (event.type === 'CardsPlayed' || event.type === 'BlindFlipMissed')) {
+        beats.push({
+          pulse: {
+            id: entry.id,
+            tone: shout?.tone ?? 'hit',
+            x: pile.cx,
+            y: pile.cy,
+            scale: event.type === 'CardsPlayed' ? event.cards.length : 1,
+          },
+          at: reduced ? 0 : cursor,
+          mine: event.playerId === viewerId,
+        })
+      }
     }
 
     // The screen reacts when the cards actually land, not when the packet arrives.
     const impact = runFlights(spawned, reveals)
+
+    // Nothing may put a panel over the table until the last card has landed.
+    busyUntil.current = Math.max(busyUntil.current, Date.now() + impact)
+
+    // A finisher we dispatched has come back off the log. Detonate on the frame
+    // its cards hit the pile, and hold the results panel behind the whole show.
+    const grade = pendingEnding.current
+    if (grade && fresh.some((e) => e.event.type === 'PlayerFinished' && e.event.playerId === viewerId)) {
+      pendingEnding.current = null
+      slamIds.current = new Set()
+      busyUntil.current = Math.max(busyUntil.current, Date.now() + impact + FINALE_MS)
+      later(() => runEnding(grade), impact)
+      // The ordinary "OUT! CLEAN HANDS" shout would talk over the ending.
+      loudest = null
+    }
+
+    for (const beat of beats) {
+      later(() => {
+        setPulses((prev) => [...prev, beat.pulse])
+        if (beat.mine) vibrate(10)
+        later(() => setPulses((prev) => prev.filter((p) => p.id !== beat.pulse.id)), 560)
+      }, beat.at)
+    }
 
     if (loudest) {
       const shout = loudest
@@ -423,6 +511,25 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
     // Log entries are the only trigger; game/viewer are read from the same commit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [room.log])
+
+  /**
+   * The results panel queues behind whatever is still playing, then waits
+   * another beat. Landing a finisher and having a panel drop on top of the
+   * explosion half a frame later wastes the only moment the feature exists for.
+   *
+   * `busyUntil` is written by the log effect above. That's a layout effect, and
+   * React runs every layout effect before any passive one, so by the time this
+   * runs the ending's full length is already known.
+   */
+  useEffect(() => {
+    if (game.phase !== 'finished') {
+      setShowResult(false)
+      return
+    }
+    const wait = Math.max(0, busyUntil.current - Date.now()) + RESULT_DELAY_MS
+    const timer = window.setTimeout(() => setShowResult(true), wait)
+    return () => window.clearTimeout(timer)
+  }, [game.phase])
 
   useLayoutEffect(() => {
     if (!seenEmotes.current) {
@@ -515,6 +622,19 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
     onError(result.ok ? null : result.error)
   }
 
+  /**
+   * One tap from the results screen back to a live game: clear the table, then
+   * start the same countdown the lobby's Deal button would. Host-only, since
+   * only the host may deal — if the room refuses either half, the error toast
+   * says so and the player is already back in the lobby to sort it out.
+   */
+  const rematch = async () => {
+    const cleared = await transport.returnToLobby()
+    if (!cleared.ok) return onError(cleared.error)
+    const dealt = await transport.startCountdown()
+    onError(dealt.ok ? null : dealt.error)
+  }
+
   const throwCards = () => {
     if (chosen.length === 0) return
     // Grab the source rects while the cards are still in the hand — a moment
@@ -526,16 +646,180 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
     void send(transport.dispatch({ type: 'playCards', playerId: viewerId, cardIds: chosen }))
   }
 
+  const finisher = useMemo(() => finisherFor(game, viewer), [game, viewer])
+
+  /**
+   * The ending, run when the slammed cards actually hit the pile — not when
+   * you let go. Landing it and fumbling it get two entirely separate shows;
+   * `endingFor` decides which, and only the grade inside a hit (perfect vs.
+   * great) changes how hard it shakes.
+   */
+  const runEnding = useCallback(
+    (grade: FinisherGrade) => {
+      const kind = endingFor(grade)
+      const id = --finisherSeq.current
+      const text = kind === 'hit' ? GRADE_LABEL[grade] : missLine(id)
+
+      setPileSlam(id)
+      later(() => setPileSlam((p) => (p === id ? 0 : p)), 420)
+      playSlam()
+      if (kind === 'hit') playFinaleHit()
+      else playFinaleMiss()
+      vibrate(kind === 'hit' ? [0, 60, 40, 60, 40, 160] : [0, 90, 120, 90])
+
+      if (reduced) {
+        // No screen-wide motion, but the words still have to be said.
+        setBanner({ id, who: viewer.name, text, tone: kind === 'hit' ? 'out' : 'take', force: 3, scale: 3 })
+        later(() => setBanner((b) => (b?.id === id ? null : b)), FINALE_MS)
+        return
+      }
+
+      setFinale({ id, kind, text })
+      later(() => setFinale((f) => (f?.id === id ? null : f)), FINALE_MS)
+
+      // Everything on the table shakes, hardest for a perfect.
+      setQuake({ id, force: kind === 'hit' ? 3 + GRADE_FORCE[grade] : 4, big: true })
+      later(() => setQuake((q) => (q?.id === id ? null : q)), 900)
+
+      setFlash({ id, tone: kind === 'hit' ? 'out' : 'take' })
+      later(() => setFlash((f) => (f?.id === id ? null : f)), 340)
+
+      if (kind === 'hit') {
+        setImpactFrame({ id, grade })
+        later(() => setImpactFrame((f) => (f?.id === id ? null : f)), 320)
+      }
+    },
+    [later, reduced, viewer.name],
+  )
+
+  /**
+   * The gesture itself only arms things: it marks the cards as a slam, gives
+   * an instant release cue so letting go feels answered, and dispatches. The
+   * show waits for the cards to land — see `runEnding`.
+   */
+  const strikeFinisher = (grade: FinisherGrade) => {
+    if (!finisher) return
+    for (const card of finisher.cards) {
+      const rect = rectOf(cardRefs.current.get(card.id))
+      if (rect) thrownFrom.current.set(card.id, rect)
+    }
+
+    slamIds.current = new Set(finisher.cards.map((c) => c.id))
+    pendingEnding.current = grade
+    playFinisherStinger(grade)
+    vibrate(GRADE_BUZZ[grade])
+
+    void send(
+      transport.dispatch({ type: 'playCards', playerId: viewerId, cardIds: finisher.cards.map((c) => c.id) }),
+    )
+  }
+
   const chosenValue = chosen.length > 0 ? owned.find((c) => c.id === chosen[0])?.value : undefined
   const quakeStyle = quake
     ? ({ animationName: quake.id % 2 === 0 ? 'quakeA' : 'quakeB', '--force': quake.force } as React.CSSProperties)
     : undefined
+  /** A finale shakes the whole table however hard it hit; ordinary shouts only do it at force 3. */
+  const tableQuakes = quake !== null && (quake.big === true || quake.force >= 3)
+  const quakeClass = quake ? (quake.big ? 'quaking quaking--big' : 'quaking') : ''
+
+  /**
+   * Your table row and your hand. Pulled out because the finisher zone wraps
+   * exactly this and nothing else — whichever of the two holds the last cards,
+   * the other one is empty by the time a finisher is on offer. While the zone
+   * owns the gesture the cards drop their own onClick, so a tap can't both
+   * select a card and throw it.
+   */
+  /**
+   * Lives in both layouts: its own row normally, and inside the finisher zone's
+   * meter row during a finisher. There it has to stop its own pointer events —
+   * otherwise reaching for it would release over the zone and throw the cards.
+   */
+  const eatButton = (
+    <button
+      type="button"
+      className="btn btn--eat"
+      disabled={!canTakePile}
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerUp={(e) => e.stopPropagation()}
+      onClick={() => void send(transport.dispatch({ type: 'pickUpPile', playerId: viewerId }))}
+    >
+      Eat the pile{game.pile.length > 0 ? ` (${game.pile.length})` : ''}
+    </button>
+  )
+
+  const cardZone = (
+    <>
+      <div className="tableau">
+        <div className="tableau__cards">
+          {tableSlots.length === 0 && <EmptySlot label="clear" />}
+          {tableSlots.map(({ down, up }, i) => (
+            <div key={down?.id ?? up?.id ?? i} className="tableau__slot">
+              {down && (
+                <div className="tableau__down">
+                  {up ? (
+                    <CardBack />
+                  ) : mustFlip ? (
+                    <button
+                      type="button"
+                      className="card card--back card--tappable card--flip"
+                      ref={registerCard(down.id)}
+                      onClick={() => {
+                        const rect = rectOf(cardRefs.current.get(down.id))
+                        if (rect) thrownFrom.current.set(down.id, rect)
+                        void send(
+                          transport.dispatch({ type: 'playFaceDownCard', playerId: viewerId, cardId: down.id }),
+                        )
+                      }}
+                    >
+                      <span className="card__count">flip</span>
+                    </button>
+                  ) : (
+                    <CardBack />
+                  )}
+                </div>
+              )}
+              {up && (
+                <div className="tableau__up">
+                  <PlayingCard
+                    card={up}
+                    state={cardState(zone === 'faceUp' && isMyTurn, playableValues.has(up.value))}
+                    selected={chosen.includes(up.id)}
+                    special={isSpecial(up.value, game.difficulty)}
+                    onClick={zone === 'faceUp' && !finisher ? () => toggle(up) : undefined}
+                    innerRef={registerCard(up.id)}
+                  />
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="hand" aria-label="Your hand" ref={handRef}>
+        {viewer.hand.map((card) => (
+          <PlayingCard
+            key={card.id}
+            card={card}
+            state={cardState(isMyTurn, playableValues.has(card.value))}
+            selected={chosen.includes(card.id)}
+            special={isSpecial(card.value, game.difficulty)}
+            onClick={finisher ? undefined : () => toggle(card)}
+            innerRef={registerCard(card.id)}
+          />
+        ))}
+        {viewer.hand.length === 0 && <EmptySlot label="empty" />}
+      </div>
+    </>
+  )
 
   return (
     <>
-      <div className={`cabinet ${quake ? 'quaking' : ''}`} style={quakeStyle} aria-hidden="true" />
+      <div className={`cabinet ${quakeClass}`} style={quakeStyle} aria-hidden="true" />
 
-      <main className={`table ${isMyTurn ? 'table--live' : ''} ${quake && quake.force >= 3 ? 'quaking' : ''}`} style={quake && quake.force >= 3 ? quakeStyle : undefined}>
+      <main
+        className={`table ${isMyTurn ? 'table--live' : ''} ${tableQuakes ? quakeClass : ''}`}
+        style={tableQuakes ? quakeStyle : undefined}
+      >
         <header className="rail">
           <span className="rail__mark">
             <SteelBall className="rail__ball" />
@@ -578,7 +862,7 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
             <Stack label="Deck" count={game.deck.length} />
             <div className="pileWrap">
               <span className="pileBed" aria-hidden="true" />
-              <div className="pile" ref={pileRef}>
+              <div className={`pile ${pileSlam ? 'pile--slammed' : ''}`} ref={pileRef}>
                 {game.pile.length === 0 ? (
                   <EmptySlot label="empty" />
                 ) : (
@@ -632,7 +916,7 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
           </section>
         </section>
 
-        <section className={`you ${isMyTurn ? 'you--active' : ''}`}>
+        <section className={`you ${isMyTurn ? 'you--active' : ''} ${finisher ? 'you--finisher' : ''}`}>
           <div className="you__head" ref={youRef}>
             <span className="you__name">{viewer.name}</span>
             <span className="you__meta">
@@ -642,90 +926,57 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
             <EmotePicker transport={transport} playerId={viewerId} onError={onError} />
           </div>
 
-          <div className="tableau">
-            <div className="tableau__cards">
-              {tableSlots.length === 0 && <EmptySlot label="clear" />}
-              {tableSlots.map(({ down, up }, i) => (
-                <div key={down?.id ?? up?.id ?? i} className="tableau__slot">
-                  {down && (
-                    <div className="tableau__down">
-                      {up ? (
-                        <CardBack />
-                      ) : mustFlip ? (
-                        <button
-                          type="button"
-                          className="card card--back card--tappable card--flip"
-                          ref={registerCard(down.id)}
-                          onClick={() => {
-                            const rect = rectOf(cardRefs.current.get(down.id))
-                            if (rect) thrownFrom.current.set(down.id, rect)
-                            void send(
-                              transport.dispatch({ type: 'playFaceDownCard', playerId: viewerId, cardId: down.id }),
-                            )
-                          }}
-                        >
-                          <span className="card__count">flip</span>
-                        </button>
-                      ) : (
-                        <CardBack />
-                      )}
-                    </div>
-                  )}
-                  {up && (
-                    <div className="tableau__up">
-                      <PlayingCard
-                        card={up}
-                        state={cardState(zone === 'faceUp' && isMyTurn, playableValues.has(up.value))}
-                        selected={chosen.includes(up.id)}
-                        special={isSpecial(up.value, game.difficulty)}
-                        onClick={zone === 'faceUp' ? () => toggle(up) : undefined}
-                        innerRef={registerCard(up.id)}
-                      />
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="hand" aria-label="Your hand" ref={handRef}>
-            {viewer.hand.map((card) => (
-              <PlayingCard
-                key={card.id}
-                card={card}
-                state={cardState(isMyTurn, playableValues.has(card.value))}
-                selected={chosen.includes(card.id)}
-                special={isSpecial(card.value, game.difficulty)}
-                onClick={() => toggle(card)}
-                innerRef={registerCard(card.id)}
-              />
-            ))}
-            {viewer.hand.length === 0 && <EmptySlot label="empty" />}
-          </div>
-
-          <div className="actions">
-            <button type="button" className="btn btn--go" disabled={chosen.length === 0} onClick={throwCards}>
-              {chosen.length === 0
-                ? 'Pick a card'
-                : `Throw ${chosen.length > 1 ? `${chosen.length}× ` : ''}${RANK_LABEL[chosenValue ?? 0]}`}
-            </button>
-            <button
-              type="button"
-              className="btn btn--eat"
-              disabled={!canTakePile}
-              onClick={() => void send(transport.dispatch({ type: 'pickUpPile', playerId: viewerId }))}
+          {/* Wrapped by the finisher zone when a throw can end it, so the swipe
+              lands on these very cards instead of on a second copy of them. The
+              zone also swallows the actions row — the finisher throws the cards
+              itself, and eating rides along in the meter's row, so the console
+              keeps exactly the height it has the rest of the game. */}
+          {finisher ? (
+            <FinisherZone
+              cards={finisher.cards}
+              reduced={reduced}
+              onStrike={strikeFinisher}
+              aside={eatButton}
             >
-              Eat the pile{game.pile.length > 0 ? ` (${game.pile.length})` : ''}
-            </button>
-          </div>
+              {cardZone}
+            </FinisherZone>
+          ) : (
+            <>
+              {cardZone}
+              <div className="actions">
+                <button type="button" className="btn btn--go" disabled={chosen.length === 0} onClick={throwCards}>
+                  {chosen.length === 0
+                    ? 'Pick a card'
+                    : `Throw ${chosen.length > 1 ? `${chosen.length}× ` : ''}${RANK_LABEL[chosenValue ?? 0]}`}
+                </button>
+                {eatButton}
+              </div>
+            </>
+          )}
           {mustFlip && <p className="hint hint--center">Nothing left but blind cards. Flip one and pray.</p>}
         </section>
       </main>
 
-      <ScreenFx flights={flights} blasts={blasts} banner={banner} flash={flash} />
+      <ScreenFx
+        flights={flights}
+        blasts={blasts}
+        pulses={pulses}
+        banner={banner}
+        flash={flash}
+        impact={impactFrame}
+        finale={finale}
+      />
       <EmoteBubbles bubbles={emoteBubbles} />
       <PlayLog room={room} game={game} />
-      {game.phase === 'finished' && <Result game={game} onDone={() => void send(transport.returnToLobby())} />}
+      {game.phase === 'finished' && showResult && (
+        <Result
+          game={game}
+          viewerId={viewerId}
+          isHost={room.lobby?.hostId === room.selfId}
+          onRematch={() => void rematch()}
+          onDone={() => void send(transport.returnToLobby())}
+        />
+      )}
     </>
   )
 }

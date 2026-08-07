@@ -87,6 +87,31 @@ const SKULL_PICTO = [
   '.............',
 ]
 
+/**
+ * Finale-only, deliberately not in `lobby/emotes` — nobody can send this one,
+ * it just rains down on you when you fumble the finisher. Square eyes and a
+ * hard ∩ mouth, since a thin curved frown vanishes at this grid size.
+ */
+const SAD_PICTO = [
+  '....#####....',
+  '..##.....##..',
+  '.#.........#.',
+  '#...........#',
+  '#..##...##..#',
+  '#..##...##..#',
+  '#...........#',
+  '#...........#',
+  '#....###....#',
+  '#..##...##..#',
+  '.##.......##.',
+  '..##.....##..',
+  '....#####....',
+]
+
+export function SadGlyph({ className }: { className?: string }) {
+  return <Bitmap grid={SAD_PICTO} className={className} />
+}
+
 const EMOTE_DESIGN: Record<string, EmoteDesign> = {
   laugh: { kind: 'word', word: 'HA' },
   gg: { kind: 'word', word: 'GG' },

@@ -2291,3 +2291,510 @@ input::placeholder {
     height: 28px;
   }
 }
+
+/* ---- the finisher ----
+ * The throw that ends it doesn't get a button. The marker sweeps, you swipe up
+ * when it crosses the middle, and the cabinet answers in proportion. Nothing
+ * here changes the play — a bad release still puts you out.
+ */
+
+/* The whole gesture surface: your real table row and hand, plus the meter.
+   It adds no card of its own, so the console keeps the height it always had
+   and the finisher never pushes itself below the fold. */
+.finisherZone {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  /* The swipe is vertical; without this the browser claims it as a scroll. */
+  touch-action: none;
+}
+
+.finisherZone__cards {
+  --draw: 0px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  /* Follows the drag, so the cards feel drawn back before they are thrown. */
+  transform: translateY(var(--draw));
+  transition: transform 120ms var(--lift);
+}
+
+/* The meter shares its row with the escape hatch, so together they occupy
+   exactly the actions row they stand in for — the finisher costs 0px. */
+.finisherZone__bar {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+}
+
+.finisherZone__bar .btn--eat {
+  flex: 0 0 auto;
+}
+
+/* One row: tag, meter, cue. */
+.finisher {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 5px 10px;
+  background-color: var(--felt);
+  border: 2px solid var(--volt);
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.7), 0 0 18px rgba(157, 255, 43, 0.26);
+  animation: finisherIn 240ms var(--spring) both;
+}
+
+@keyframes finisherIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+}
+
+.finisher__tag {
+  font-size: var(--ui-xs);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--volt);
+  white-space: nowrap;
+}
+
+.finisher__meter {
+  position: relative;
+  flex: 1;
+  min-width: 60px;
+  height: 14px;
+  background: var(--void);
+  border: 2px solid var(--line);
+}
+
+/* Bands are centred and as wide a fraction of the track as the grade they buy. */
+.finisher__band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: calc(var(--band) * 100%);
+  transform: translateX(-50%);
+  background: rgba(157, 255, 43, 0.22);
+}
+
+.finisher__band--perfect {
+  background: var(--volt);
+  opacity: 0.55;
+}
+
+.finisher__marker {
+  --pos: 0.5;
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  left: calc(var(--pos) * 100%);
+  width: 4px;
+  margin-left: -2px;
+  background: var(--bone);
+  box-shadow: 0 0 8px var(--bone);
+}
+
+.finisher__cue {
+  font-size: var(--ui-xs);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--dust);
+  white-space: nowrap;
+}
+
+/* The cards that are about to leave, in whichever zone they are sitting.
+   They pulse, because they are now the thing you swipe. */
+.you--finisher .hand .card,
+.you--finisher .tableau__up .card {
+  border-color: var(--volt);
+  animation: finisherReady 1.6s ease-in-out infinite;
+}
+
+@keyframes finisherReady {
+  0%,
+  100% {
+    box-shadow: 0 0 10px rgba(157, 255, 43, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(157, 255, 43, 0.85);
+  }
+}
+
+/* The meter shares its row with the escape hatch, so width is what runs out
+   first, not height. On a narrow phone the cue drops and the meter keeps the
+   room — the button's aria-label still spells the gesture out. */
+@media (max-width: 400px) {
+  .finisher__cue {
+    display: none;
+  }
+
+  .finisher__tag {
+    letter-spacing: 1px;
+  }
+}
+
+/* ---- the impact frame ----
+ * One hard held frame on release: the screen blanks to the grade's colour and
+ * a border slams in from the edges. Short enough to read as a hit, not a bug.
+ */
+
+.impact {
+  position: fixed;
+  inset: 0;
+  z-index: 84;
+  animation: impactOut 300ms steps(4, jump-none) both;
+}
+
+.impact--perfect {
+  background: var(--volt);
+  border: 18px solid var(--bone);
+}
+
+.impact--great {
+  background: var(--dmd);
+  border: 12px solid var(--bone);
+}
+
+.impact--clean {
+  background: var(--ice);
+  border: 8px solid var(--bone);
+}
+
+@keyframes impactOut {
+  from {
+    opacity: 0.85;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* ---- the per-play pulse ----
+ * Every card that reaches the pile gets one, loud plays included. It is the
+ * smallest thing on the effects layer on purpose: acknowledgement, not drama.
+ */
+
+.pulse {
+  --pscale: 1;
+  position: fixed;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  z-index: 82;
+  border: 2px solid currentColor;
+  color: var(--bone);
+  opacity: 0.8;
+  animation: pulseOut 460ms var(--lift) both;
+}
+
+@keyframes pulseOut {
+  from {
+    transform: rotate(45deg) scale(0.4);
+    opacity: 0.8;
+  }
+  to {
+    transform: rotate(45deg) scale(calc(3 + var(--pscale) * 0.9));
+    opacity: 0;
+  }
+}
+
+.pulse--burn,
+.pulse--quad {
+  color: var(--dmd);
+}
+
+.pulse--take,
+.pulse--time {
+  color: var(--flame);
+}
+
+.pulse--out {
+  color: var(--volt);
+}
+
+/* ---- how close it was ---- */
+
+.close {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.close__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.close__row {
+  display: grid;
+  grid-template-columns: minmax(64px, 1fr) 3fr auto;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--ui-sm);
+  color: var(--dust);
+}
+
+.close__row--you {
+  color: var(--bone);
+}
+
+.close__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.close__bar {
+  position: relative;
+  height: 10px;
+  background: var(--void);
+  border: 2px solid var(--line);
+}
+
+.close__bar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: calc(var(--fill) * 100%);
+  background: var(--flame);
+}
+
+.close__count {
+  min-width: 26px;
+  color: var(--flame);
+}
+
+.close__count svg {
+  display: block;
+  height: 11px;
+  width: auto;
+}
+
+/* ---- the two endings ----
+ * Landing the finisher and fumbling it get separate shows that share only
+ * their timing: cards slam, the screen answers, and the results panel is held
+ * back (see RESULT_DELAY_MS) so nothing lands on top of the moment.
+ */
+
+/* The slam: a hard accelerating drop instead of the usual gentle arc. */
+.flight--slam {
+  animation-timing-function: cubic-bezier(0.7, 0, 0.85, 0.15);
+}
+
+/* The pile takes the hit the cards deliver. */
+.pile--slammed {
+  animation: pileSlam 380ms var(--snap) both;
+}
+
+@keyframes pileSlam {
+  0% {
+    transform: scale(1.16);
+  }
+  40% {
+    transform: scale(0.94);
+  }
+  70% {
+    transform: scale(1.04);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* A finale shakes longer and harder than any ordinary shout. */
+.quaking--big {
+  animation-duration: 900ms;
+  animation-timing-function: steps(14, jump-none);
+}
+
+.finale {
+  position: fixed;
+  inset: 0;
+  z-index: 86;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.finale__text {
+  position: absolute;
+  left: 50%;
+  top: 34%;
+  transform: translate(-50%, -50%);
+  width: min(92vw, 760px);
+  text-align: center;
+  font-family: var(--font-dmd);
+  font-variation-settings: var(--dmd-axes);
+  font-weight: 900;
+  font-size: clamp(28px, 8vw, 68px);
+  line-height: 1;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  animation: finaleText 460ms var(--spring) both;
+}
+
+.finale--hit .finale__text {
+  color: var(--bone);
+  text-shadow: 0 0 18px rgba(157, 255, 43, 0.9), 0 4px 0 rgba(0, 0, 0, 0.75);
+}
+
+.finale--miss .finale__text {
+  color: var(--flame);
+  text-shadow: 0 0 16px rgba(255, 47, 106, 0.7), 0 4px 0 rgba(0, 0, 0, 0.8);
+}
+
+@keyframes finaleText {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(2.4);
+  }
+}
+
+/* ---- #1 landed it: rainbow detonation ---- */
+
+/* One pass of colour across the whole screen, under the bursts. */
+.finale__wash {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    92deg,
+    hsl(0 100% 60% / 0.5),
+    hsl(50 100% 60% / 0.5),
+    hsl(110 100% 60% / 0.5),
+    hsl(180 100% 60% / 0.5),
+    hsl(250 100% 60% / 0.5),
+    hsl(320 100% 60% / 0.5)
+  );
+  background-size: 300% 100%;
+  mix-blend-mode: screen;
+  animation: finaleWash 800ms steps(6, jump-none) both;
+}
+
+@keyframes finaleWash {
+  from {
+    opacity: 0.85;
+    background-position: 0% 0;
+  }
+  to {
+    opacity: 0;
+    background-position: 100% 0;
+  }
+}
+
+/* Each burst owns its hue; rings and shards inherit it through currentColor. */
+.finale__burst {
+  position: absolute;
+  width: 0;
+  height: 0;
+  color: hsl(var(--hue) 100% 62%);
+}
+
+.finale__ring {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border: 3px solid currentColor;
+  border-radius: 50%;
+  animation: finaleRing 760ms steps(6, jump-none) both;
+  animation-delay: calc(var(--fdelay) + var(--r) * 90ms);
+}
+
+@keyframes finaleRing {
+  from {
+    transform: scale(0.2);
+    opacity: 1;
+  }
+  to {
+    transform: scale(calc(4.5 * var(--fsize)));
+    opacity: 0;
+  }
+}
+
+.finale__shard {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  background: currentColor;
+  animation: finaleShard 720ms steps(8, jump-none) both;
+  animation-delay: calc(var(--fdelay) + var(--s) * 10ms);
+}
+
+@keyframes finaleShard {
+  from {
+    transform: rotate(calc(var(--s) * 36deg)) translateY(0) scale(1.6);
+    opacity: 1;
+  }
+  to {
+    transform: rotate(calc(var(--s) * 36deg)) translateY(calc(-110px * var(--fsize))) scale(0.3);
+    opacity: 0;
+  }
+}
+
+/* ---- #2 fumbled it: confetti and a rain of sad faces ---- */
+
+.finale__confetto {
+  position: absolute;
+  top: -6%;
+  width: 9px;
+  height: 14px;
+  background: hsl(var(--hue) 90% 62%);
+  animation: confettiFall var(--fall) linear var(--fdelay) both;
+}
+
+@keyframes confettiFall {
+  from {
+    transform: translate(0, 0) rotate(0deg);
+    opacity: 1;
+  }
+  to {
+    transform: translate(var(--drift), 112vh) rotate(var(--spin));
+    opacity: 0.15;
+  }
+}
+
+.finale__sad {
+  position: absolute;
+  display: block;
+  color: var(--ice);
+  animation: sadPop 1200ms var(--spring) var(--fdelay) both;
+}
+
+.finale__sadGlyph {
+  display: block;
+  width: calc(46px * var(--fsize));
+  height: calc(46px * var(--fsize));
+  filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.6));
+}
+
+@keyframes sadPop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.2) rotate(-12deg);
+  }
+  22% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1) rotate(4deg);
+  }
+  70% {
+    opacity: 1;
+    transform: translate(-50%, calc(-50% + 10px)) scale(1) rotate(-3deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 42px)) scale(0.9) rotate(2deg);
+  }
+}

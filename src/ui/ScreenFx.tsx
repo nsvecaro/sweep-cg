@@ -1,6 +1,8 @@
 import type { Card } from '@/engine'
 import type { Shout } from './commentary'
+import type { FinisherEnding, FinisherGrade } from './finisher'
 import { CardBack, PlayingCard } from './PlayingCard'
+import { SadGlyph } from './emoteGlyphs'
 
 /**
  * A card in transit. Every number is a measured viewport coordinate rather than
@@ -12,6 +14,8 @@ export interface Flight {
   id: string
   card: Card | null
   special: boolean
+  /** A finisher throw: short, accelerating, all cards landing as one hit. */
+  slam?: boolean
   x0: number
   y0: number
   x1: number
@@ -35,6 +39,175 @@ export interface Blast {
 
 export interface Banner extends Shout {
   id: number
+}
+
+/**
+ * The small answer every single play gets, loud ones included. The blast is
+ * reserved for moments worth interrupting you for; this is the one that fires
+ * when an ordinary three lands on an ordinary two, so no throw ever feels
+ * ignored.
+ */
+export interface Pulse {
+  id: number
+  tone: Shout['tone']
+  x: number
+  y: number
+  /** Cards behind it — a pair pulses wider than a single. */
+  scale: number
+}
+
+/** The finisher's freeze: one hard frame across the whole screen, graded. */
+export interface Impact {
+  id: number
+  grade: FinisherGrade
+}
+
+/** The whole-screen ending. Two of them, and they share nothing but their timing. */
+export interface Finale {
+  id: number
+  kind: FinisherEnding
+  /** Drives the banner under the effect — the grade name, or the roast. */
+  text: string
+}
+
+const RAINBOW_BURSTS = 14
+const CONFETTI = 46
+const SAD_FACES = 9
+
+/**
+ * Deterministic 0..1 from an index. Same reason `embersFor` does its own
+ * arithmetic: CSS `calc()` has no modulo, so every scattered position has to
+ * be worked out here and handed over as a plain number.
+ *
+ * The salt is mixed in, not added. An earlier version did `base + salt * k`,
+ * which leaves `x - y` constant for every i — every burst landed on the same
+ * diagonal line across the screen. Two avalanche rounds decorrelate the axes.
+ */
+function scatter(i: number, salt: number): number {
+  let h = Math.imul(i + 1, 0x9e3779b1) ^ Math.imul(salt + 1, 0x85ebca6b)
+  h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d)
+  h = Math.imul(h ^ (h >>> 13), 0x297a2d39)
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296
+}
+
+interface Burst {
+  key: number
+  x: number
+  y: number
+  hue: number
+  delay: number
+  size: number
+}
+
+/** Explosions all over the screen, each one a different colour of the rainbow. */
+function rainbowBursts(): Burst[] {
+  return Array.from({ length: RAINBOW_BURSTS }, (_, i) => ({
+    key: i,
+    x: 8 + scatter(i, 1) * 84,
+    y: 10 + scatter(i, 2) * 72,
+    // Spread evenly round the wheel first, then jitter, so no two neighbours
+    // land on the same colour however the scatter falls.
+    hue: ((i * 360) / RAINBOW_BURSTS + scatter(i, 5) * 18) % 360,
+    delay: scatter(i, 3) * 560,
+    size: 0.65 + scatter(i, 4) * 1.15,
+  }))
+}
+
+interface Confetto {
+  key: number
+  x: number
+  hue: number
+  delay: number
+  drift: number
+  spin: number
+  fall: number
+}
+
+function confettiFall(): Confetto[] {
+  return Array.from({ length: CONFETTI }, (_, i) => ({
+    key: i,
+    x: scatter(i, 11) * 100,
+    hue: scatter(i, 12) * 360,
+    delay: scatter(i, 13) * 700,
+    drift: (scatter(i, 14) - 0.5) * 160,
+    spin: 360 + scatter(i, 15) * 720,
+    fall: 1500 + scatter(i, 16) * 900,
+  }))
+}
+
+function sadFaces(): Burst[] {
+  return Array.from({ length: SAD_FACES }, (_, i) => ({
+    key: i,
+    x: 10 + scatter(i, 21) * 80,
+    y: 14 + scatter(i, 22) * 64,
+    hue: 0,
+    delay: scatter(i, 23) * 620,
+    size: 0.7 + scatter(i, 24) * 0.8,
+  }))
+}
+
+function FinaleBody({ finale }: { finale: Finale }) {
+  if (finale.kind === 'hit') {
+    return (
+      <>
+        <i className="finale__wash" />
+        {rainbowBursts().map((b) => (
+          <i
+            key={b.key}
+            className="finale__burst"
+            style={
+              {
+                left: `${b.x}%`,
+                top: `${b.y}%`,
+                '--hue': b.hue,
+                '--fdelay': `${b.delay}ms`,
+                '--fsize': b.size,
+              } as React.CSSProperties
+            }
+          >
+            {[0, 1, 2].map((r) => (
+              <i key={r} className="finale__ring" style={{ '--r': r } as React.CSSProperties} />
+            ))}
+            {Array.from({ length: 10 }, (_, s) => s).map((s) => (
+              <i key={s} className="finale__shard" style={{ '--s': s } as React.CSSProperties} />
+            ))}
+          </i>
+        ))}
+      </>
+    )
+  }
+
+  return (
+    <>
+      {confettiFall().map((c) => (
+        <i
+          key={c.key}
+          className="finale__confetto"
+          style={
+            {
+              left: `${c.x}%`,
+              '--hue': c.hue,
+              '--fdelay': `${c.delay}ms`,
+              '--drift': `${c.drift}px`,
+              '--spin': `${c.spin}deg`,
+              '--fall': `${c.fall}ms`,
+            } as React.CSSProperties
+          }
+        />
+      ))}
+      {sadFaces().map((f) => (
+        <i
+          key={f.key}
+          className="finale__sad"
+          style={
+            { left: `${f.x}%`, top: `${f.y}%`, '--fdelay': `${f.delay}ms`, '--fsize': f.size } as React.CSSProperties
+          }
+        >
+          <SadGlyph className="finale__sadGlyph" />
+        </i>
+      ))}
+    </>
+  )
 }
 
 const SHARD_BASE = 14
@@ -143,17 +316,33 @@ function BlastBody({ blast }: { blast: Blast }) {
 export function ScreenFx({
   flights,
   blasts,
+  pulses,
   banner,
   flash,
+  impact,
+  finale,
 }: {
   flights: Flight[]
   blasts: Blast[]
+  pulses: Pulse[]
   banner: Banner | null
   flash: { id: number; tone: Shout['tone'] } | null
+  impact: Impact | null
+  finale: Finale | null
 }) {
   return (
     <div className="fx" aria-hidden="true">
       {flash && <div key={`flash${flash.id}`} className={`flash flash--${flash.tone}`} />}
+
+      {impact && <div key={`impact${impact.id}`} className={`impact impact--${impact.grade}`} />}
+
+      {pulses.map((pulse) => (
+        <i
+          key={`pulse${pulse.id}`}
+          className={`pulse pulse--${pulse.tone}`}
+          style={{ left: `${pulse.x}px`, top: `${pulse.y}px`, '--pscale': pulse.scale } as React.CSSProperties}
+        />
+      ))}
 
       {blasts.map((blast) => (
         <div
@@ -168,7 +357,7 @@ export function ScreenFx({
       {flights.map((flight) => (
         <div
           key={flight.id}
-          className="flight"
+          className={flight.slam ? 'flight flight--slam' : 'flight'}
           style={
             {
               '--x0': flight.x0,
@@ -187,6 +376,14 @@ export function ScreenFx({
           {flight.card ? <PlayingCard card={flight.card} special={flight.special} /> : <CardBack />}
         </div>
       ))}
+
+      {/* Above the flights, below the banner: the cards have to land *into* it. */}
+      {finale && (
+        <div key={`finale${finale.id}`} className={`finale finale--${finale.kind}`}>
+          <FinaleBody finale={finale} />
+          <strong className="finale__text">{finale.text}</strong>
+        </div>
+      )}
 
       {banner && (
         <div key={`taunt${banner.id}`} className={`taunt taunt--${banner.tone} taunt--f${banner.force}`}>

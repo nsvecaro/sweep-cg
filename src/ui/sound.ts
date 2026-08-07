@@ -6,6 +6,7 @@
  */
 import type { GameEvent } from '@/engine'
 import type { Shout } from './commentary'
+import type { FinisherGrade } from './finisher'
 
 let ctx: AudioContext | null = null
 const listeners = new Set<() => void>()
@@ -112,6 +113,48 @@ const pickupCue = () => tone({ freq: 180, to: 90, duration: 0.18, type: 'sine', 
 const missCue = () => notes([440, 330], 0.1, { type: 'triangle' })
 const timeoutCue = () => tone({ freq: 150, duration: 0.35, gain: 0.13 })
 const finishCue = () => notes([523, 659, 784], 0.09)
+
+/**
+ * The finisher stinger. Three separate endings rather than one cue at three
+ * volumes — a perfect release should sound like a different event, not a
+ * louder version of a shrug.
+ */
+export function playFinisherStinger(grade: FinisherGrade) {
+  if (grade === 'perfect') {
+    notes([784, 988, 1319, 1568, 2093], 0.07, { type: 'square', gain: 0.13 })
+    tone({ freq: 140, to: 40, duration: 0.55, type: 'sawtooth', gain: 0.12 })
+    return
+  }
+  if (grade === 'great') {
+    notes([659, 880, 1175], 0.08, { type: 'square', gain: 0.12 })
+    tone({ freq: 120, to: 45, duration: 0.36, type: 'sawtooth', gain: 0.09 })
+    return
+  }
+  notes([523, 784], 0.11, { type: 'triangle', gain: 0.11 })
+}
+
+/** The cards hitting the pile: a short, hard knock under whatever else is playing. */
+export function playSlam() {
+  tone({ freq: 260, to: 40, duration: 0.16, type: 'square', gain: 0.16 })
+  tone({ freq: 90, to: 30, duration: 0.3, type: 'sawtooth', gain: 0.14 })
+}
+
+/**
+ * The two endings. They deliberately share no material — landing it should not
+ * sound like a quieter version of missing it.
+ */
+export function playFinaleHit() {
+  notes([523, 659, 784, 1047, 1319, 1568], 0.085, { type: 'square', gain: 0.13 })
+  notes([784, 988, 1175], 0.085, { type: 'triangle', gain: 0.08, delay: 0.09 })
+  tone({ freq: 160, to: 38, duration: 0.85, type: 'sawtooth', gain: 0.14 })
+}
+
+export function playFinaleMiss() {
+  // Four notes falling off a cliff — the closest a square wave gets to a sad trombone.
+  notes([392, 349, 311, 262], 0.19, { type: 'sawtooth', gain: 0.12 })
+  tone({ freq: 200, to: 55, duration: 0.9, type: 'triangle', gain: 0.1, delay: 0.42 })
+  tone({ freq: 70, duration: 0.4, type: 'sine', gain: 0.12 })
+}
 
 /** Your turn just started — a gentle, distinct two-note chime. */
 export function playYourTurnCue() {

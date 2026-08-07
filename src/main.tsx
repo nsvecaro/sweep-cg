@@ -28,7 +28,10 @@ async function devTransport(): Promise<SweepTransport | undefined> {
       await transport.startGame((params.get('mode') as Difficulty | null) ?? 'medium')
     }
     // Console access for cheats like transport.debugStackHand(9, 4) — dev-only, dropped from prod.
-    ;(window as unknown as { transport: LocalTransport }).transport = transport
+    // `LocalTransport` came out of a dynamic import, so the name is a value and
+    // not a type; `InstanceType<typeof …>` gets the instance type from it without
+    // a top-level import that would risk pulling the class into the prod bundle.
+    ;(window as unknown as { transport: InstanceType<typeof LocalTransport> }).transport = transport
     return transport
   }
   return undefined
