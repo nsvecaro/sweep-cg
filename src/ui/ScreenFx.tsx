@@ -29,14 +29,116 @@ export interface Blast {
   tone: Shout['tone']
   x: number
   y: number
+  /** Cards behind the effect. Bigger stack -> bigger, longer, busier blast. */
+  scale: number
 }
 
 export interface Banner extends Shout {
   id: number
 }
 
-const SHARDS = Array.from({ length: 14 }, (_, i) => i)
-const RINGS = [0, 1, 2]
+const SHARD_BASE = 14
+const RING_BASE = 3
+const SPIKE_COUNT = 8
+const EMBER_BASE = 10
+
+/** More cards in the stack -> more rings and shards, up to a sane ceiling. */
+function shardsFor(scale: number): number[] {
+  return Array.from({ length: Math.min(SHARD_BASE + (scale - 1) * 4, 34) }, (_, i) => i)
+}
+function ringsFor(scale: number): number[] {
+  return Array.from({ length: Math.min(RING_BASE + Math.floor((scale - 1) / 2), 6) }, (_, i) => i)
+}
+interface Ember {
+  key: number
+  x0: number
+  x1: number
+  delay: number
+}
+
+/**
+ * CSS `calc()` has no modulo operator, so the jitter has to be worked out
+ * here in JS and handed to the CSS as plain numbers — an earlier version
+ * tried `calc(... % ...)` for this, which is invalid CSS and silently drops
+ * the whole declaration (embers all stacked at one spot, motionless).
+ */
+function embersFor(scale: number): Ember[] {
+  const count = Math.min(EMBER_BASE + (scale - 1) * 3, 30)
+  return Array.from({ length: count }, (_, i) => ({
+    key: i,
+    x0: ((i * 37) % 80) - 40,
+    x1: ((i * 53) % 40) - 20,
+    delay: (i * 23) % 260,
+  }))
+}
+
+/**
+ * Each stack size gets a shape of its own, not just a bigger/slower version
+ * of the same one: a pair pops two plain rings, a triple spins a pinwheel of
+ * shards, a quad shatters into radiating spikes, and a ten's burn rises as
+ * drifting embers instead of expanding outward at all.
+ */
+function BlastBody({ blast }: { blast: Blast }) {
+  switch (blast.tone) {
+    case 'pair':
+      return (
+        <>
+          {[0, 1].map((r) => (
+            <i key={r} className="blast__ring" style={{ '--r': r } as React.CSSProperties} />
+          ))}
+        </>
+      )
+    case 'triple':
+      return (
+        <>
+          {ringsFor(blast.scale).map((r) => (
+            <i key={r} className="blast__ring" style={{ '--r': r } as React.CSSProperties} />
+          ))}
+          <i className="blast__pinwheel">
+            {shardsFor(blast.scale).map((s) => (
+              <i key={s} className="blast__shard" style={{ '--s': s } as React.CSSProperties} />
+            ))}
+          </i>
+        </>
+      )
+    case 'quad':
+      return (
+        <>
+          {ringsFor(blast.scale).map((r) => (
+            <i key={r} className="blast__ring" style={{ '--r': r } as React.CSSProperties} />
+          ))}
+          {Array.from({ length: SPIKE_COUNT }, (_, i) => i).map((i) => (
+            <i key={i} className="blast__spike" style={{ '--i': i } as React.CSSProperties} />
+          ))}
+        </>
+      )
+    case 'burn':
+      return (
+        <>
+          {embersFor(blast.scale).map((e) => (
+            <i
+              key={e.key}
+              className="blast__ember"
+              style={
+                { '--ex0': `${e.x0}px`, '--ex1': `${e.x1}px`, '--edelay': `${e.delay}ms` } as React.CSSProperties
+              }
+            />
+          ))}
+        </>
+      )
+    default:
+      return (
+        <>
+          {ringsFor(blast.scale).map((r) => (
+            <i key={r} className="blast__ring" style={{ '--r': r } as React.CSSProperties} />
+          ))}
+          {shardsFor(blast.scale).map((s) => (
+            <i key={s} className="blast__shard" style={{ '--s': s } as React.CSSProperties} />
+          ))}
+        </>
+      )
+  }
+}
 
 export function ScreenFx({
   flights,
@@ -57,14 +159,9 @@ export function ScreenFx({
         <div
           key={`blast${blast.id}`}
           className={`blast blast--${blast.tone}`}
-          style={{ left: `${blast.x}px`, top: `${blast.y}px` }}
+          style={{ left: `${blast.x}px`, top: `${blast.y}px`, '--bscale': blast.scale } as React.CSSProperties}
         >
-          {RINGS.map((r) => (
-            <i key={r} className="blast__ring" style={{ '--r': r } as React.CSSProperties} />
-          ))}
-          {SHARDS.map((s) => (
-            <i key={s} className="blast__shard" style={{ '--s': s } as React.CSSProperties} />
-          ))}
+          <BlastBody blast={blast} />
         </div>
       ))}
 

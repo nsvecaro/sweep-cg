@@ -1444,6 +1444,7 @@ input::placeholder {
 }
 
 .blast {
+  --bscale: 1;
   position: fixed;
   width: 0;
   height: 0;
@@ -1458,7 +1459,7 @@ input::placeholder {
   height: 18px;
   margin: -9px 0 0 -9px;
   border: 3px solid currentColor;
-  animation: ringOut 520ms steps(5, jump-none) both;
+  animation: ringOut calc(520ms * (0.82 + var(--bscale) * 0.16)) steps(5, jump-none) both;
   animation-delay: calc(var(--r) * 70ms);
 }
 
@@ -1468,7 +1469,7 @@ input::placeholder {
     opacity: 1;
   }
   to {
-    transform: rotate(45deg) scale(5.5);
+    transform: rotate(45deg) scale(calc(4.6 + var(--bscale) * 1.15));
     opacity: 0;
   }
 }
@@ -1481,7 +1482,7 @@ input::placeholder {
   height: 6px;
   margin: -3px 0 0 -3px;
   background: currentColor;
-  animation: shardOut 560ms steps(7, jump-none) both;
+  animation: shardOut calc(560ms * (0.82 + var(--bscale) * 0.16)) steps(7, jump-none) both;
   animation-delay: calc(var(--s) * 8ms);
 }
 
@@ -1491,14 +1492,99 @@ input::placeholder {
     opacity: 1;
   }
   to {
-    transform: rotate(calc(var(--s) * 25.7deg)) translateY(-118px) scale(0.5);
+    transform: rotate(calc(var(--s) * 25.7deg)) translateY(calc(-96px - var(--bscale) * 20px)) scale(0.5);
     opacity: 0;
   }
 }
 
-.flash--burn,
+/* Triple: the shard ring spins as a whole while each shard also flies out,
+   so it reads as a pinwheel rather than a bigger plain pop. */
+.blast__pinwheel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  animation: pinwheelSpin calc(560ms * (0.82 + var(--bscale) * 0.16)) ease-out both;
+}
+
+@keyframes pinwheelSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(150deg);
+  }
+}
+
+/* Quad: long spikes shatter outward instead of small dots — a starburst. */
+.blast__spike {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: calc(46px + var(--bscale) * 6px);
+  margin: 0 0 0 -2px;
+  background: linear-gradient(to top, currentColor, transparent);
+  transform-origin: 50% 0;
+  transform: rotate(calc(var(--i) * 45deg)) scaleY(0.15);
+  opacity: 0;
+  animation: spikeOut calc(480ms * (0.82 + var(--bscale) * 0.16)) cubic-bezier(0.2, 0.8, 0.3, 1) both;
+  animation-delay: calc(var(--i) * 12ms);
+}
+
+@keyframes spikeOut {
+  0% {
+    transform: rotate(calc(var(--i) * 45deg)) scaleY(0.15);
+    opacity: 1;
+  }
+  55% {
+    transform: rotate(calc(var(--i) * 45deg)) scaleY(1);
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(calc(var(--i) * 45deg)) scaleY(1.3);
+    opacity: 0;
+  }
+}
+
+/* Burn (a ten): no outward pop at all — embers drift and flicker upward. */
+.blast__ember {
+  position: absolute;
+  top: 0;
+  left: var(--ex0);
+  width: 5px;
+  height: 5px;
+  margin: -2px 0 0 -2px;
+  background: currentColor;
+  border-radius: 1px;
+  opacity: 0;
+  animation: emberUp calc(900ms * (0.82 + var(--bscale) * 0.16)) ease-out both;
+  animation-delay: var(--edelay);
+}
+
+@keyframes emberUp {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  50% {
+    transform: translate(var(--ex1), -60px) scale(0.85);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(var(--ex1), calc(-120px - var(--bscale) * 14px)) scale(0.3);
+    opacity: 0;
+  }
+}
+
 .flash--quad {
   background: var(--dmd);
+}
+.flash--burn {
+  background: var(--flame);
 }
 .flash--take,
 .flash--time {
@@ -1511,10 +1597,18 @@ input::placeholder {
 .flash--skip {
   background: var(--ice);
 }
+.flash--pair {
+  background: var(--ice);
+}
+.flash--triple {
+  background: var(--volt);
+}
 
-.blast--burn,
 .blast--quad {
   color: var(--dmd);
+}
+.blast--burn {
+  color: var(--flame);
 }
 .blast--take,
 .blast--time {
@@ -1526,6 +1620,12 @@ input::placeholder {
 .blast--hit,
 .blast--skip {
   color: var(--ice);
+}
+.blast--pair {
+  color: var(--ice);
+}
+.blast--triple {
+  color: var(--volt);
 }
 
 /* ---- the cabinet's running mouth ---- */

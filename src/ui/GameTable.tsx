@@ -395,15 +395,24 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
 
     if (loudest) {
       const shout = loudest
+      // Bigger stack -> bigger blast, and it earns more time on screen to match.
+      const stretch = 0.82 + shout.scale * 0.16
+      // Embers run much longer than the ring/shard shapes (900ms + up to 260ms
+      // per-ember stagger vs. ~560ms) — the cleanup budget has to match the
+      // CSS animation length in ScreenFx.tsx/app.css or embers get unmounted
+      // mid-fade and the burn reads as no effect at all.
+      const blastLifetime = (shout.tone === 'burn' ? 1180 : 720) * stretch
       later(() => {
         setBanner(shout)
         if (shout.force >= 2 && !reduced) {
           setQuake({ id: shout.id, force: shout.force })
           setFlash({ id: shout.id, tone: shout.tone })
-          if (pile) setBlasts((prev) => [...prev, { id: shout.id, tone: shout.tone, x: pile.cx, y: pile.cy }])
-          later(() => setBlasts((prev) => prev.filter((b) => b.id !== shout.id)), 720)
-          later(() => setQuake((q) => (q?.id === shout.id ? null : q)), 460)
-          later(() => setFlash((f) => (f?.id === shout.id ? null : f)), 340)
+          if (pile) {
+            setBlasts((prev) => [...prev, { id: shout.id, tone: shout.tone, x: pile.cx, y: pile.cy, scale: shout.scale }])
+          }
+          later(() => setBlasts((prev) => prev.filter((b) => b.id !== shout.id)), blastLifetime)
+          later(() => setQuake((q) => (q?.id === shout.id ? null : q)), 460 * stretch)
+          later(() => setFlash((f) => (f?.id === shout.id ? null : f)), 340 * stretch)
         }
         later(
           () => setBanner((b) => (b?.id === shout.id ? null : b)),

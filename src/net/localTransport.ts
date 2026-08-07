@@ -3,6 +3,8 @@ import {
   chooseBotAction,
   chooseBotFaceUpCards,
   createGame,
+  SUITS,
+  type Card,
   type Difficulty,
   type GameAction,
   type GameEvent,
@@ -197,6 +199,27 @@ export class LocalTransport implements SweepTransport {
 
   async dispatch(action: GameAction): Promise<Result<null>> {
     return this.applyLocally(action)
+  }
+
+  /**
+   * Console-only cheat for iterating on screen FX: stuffs your hand with
+   * `count` cards of `value` and clears the board restriction so they're
+   * playable on your next turn no matter what's on the pile. Never called
+   * from the UI.
+   */
+  debugStackHand(value: number, count = 4): void {
+    if (!this.game) return
+    const me = this.game.players.find((p) => p.playerId === this.selfId)
+    if (!me) return
+    const cards: Card[] = Array.from({ length: count }, (_, i) => ({
+      id: nextId(`dbg${value}`),
+      suit: SUITS[i % SUITS.length],
+      value,
+    }))
+    me.hand = [...cards, ...me.hand].sort((a, b) => a.value - b.value)
+    this.game.activeValue = null
+    this.game.forceLower = false
+    this.publish()
   }
 
   async sendEmote(playerId: string, emote: string): Promise<Result<null>> {

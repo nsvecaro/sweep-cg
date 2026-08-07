@@ -27,6 +27,8 @@ async function devTransport(): Promise<SweepTransport | undefined> {
       for (let i = 1 + passSeats; i < seats; i++) await transport.addBot()
       await transport.startGame((params.get('mode') as Difficulty | null) ?? 'medium')
     }
+    // Console access for cheats like transport.debugStackHand(9, 4) — dev-only, dropped from prod.
+    ;(window as unknown as { transport: LocalTransport }).transport = transport
     return transport
   }
   return undefined
