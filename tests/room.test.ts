@@ -291,4 +291,56 @@ describe('ONLINE room', () => {
     expect(dealtRoom.countdownEndsAt).toBeNull()
     expect(dealtRoom.game!.difficulty).toBe('hard')
   })
+
+  // ---- finisher broadcast ----------------------------------------------
+  // Cosmetic, and trusted for its *grade* (only the gesture knows that), but
+  // not for who or when. These guard the parts a client could otherwise lie about.
+
+  /** Puts `playerId` legitimately out, so a finisher may be announced for them. */
+  const wentOut = (room: RoomRecord, playerId: string): RoomRecord => {
+    const next: RoomRecord = structuredClone(room)
+    const player = next.game!.players.find((p) => p.playerId === playerId)!
+    player.isFinished = true
+    return next
+  }
+
+  it('ROOM_FINISHER — a player who has gone out can announce how they timed it', () => {
+    const room = run(wentOut(dealt(), 'host'), { type: 'finisher', playerId: 'host', grade: 'perfect' }, 'host')
+
+    expect(room.finishers).toHaveLength(1)
+    expect(room.finishers[0]).toMatchObject({ playerId: 'host', grade: 'perfect' })
+    // Everyone at the table can read it — that is the entire point of the channel.
+    expect(viewOf(room, 'guest', 1).finishers).toEqual(room.finishers)
+  })
+
+  it('ROOM_FINISHER — you cannot announce one for somebody else’s seat', () => {
+    const room = wentOut(dealt(), 'host')
+    expect(refuse(room, { type: 'finisher', playerId: 'host', grade: 'perfect' }, 'guest')).toMatch(/your seat/i)
+  })
+
+  it('ROOM_FINISHER — you cannot announce one before actually going out', () => {
+    expect(refuse(dealt(), { type: 'finisher', playerId: 'host', grade: 'perfect' }, 'host')).toMatch(/gone out/i)
+  })
+
+  it('ROOM_FINISHER — a grade the UI has no animation for is refused', () => {
+    const room = wentOut(dealt(), 'host')
+    const command = { type: 'finisher', playerId: 'host', grade: 'flawless' } as unknown as RoomCommand
+    expect(refuse(room, command, 'host')).toMatch(/unknown finisher/i)
+  })
+
+  it('ROOM_FINISHER — the same seat cannot spam the table with endings', () => {
+    const room = run(wentOut(dealt(), 'host'), { type: 'finisher', playerId: 'host', grade: 'perfect' }, 'host')
+    expect(refuse(room, { type: 'finisher', playerId: 'host', grade: 'clean' }, 'host')).toMatch(/not so fast/i)
+  })
+
+  it('ROOM_FINISHER — an ending belongs to its own hand and never leaks into the next', () => {
+    let room = run(wentOut(dealt(), 'host'), { type: 'finisher', playerId: 'host', grade: 'perfect' }, 'host')
+    room.game!.phase = 'finished'
+
+    room = run(room, { type: 'returnToLobby' }, 'host')
+    expect(room.finishers).toEqual([])
+
+    room = run(room, { type: 'start', difficulty: 'medium' }, 'host')
+    expect(room.finishers).toEqual([])
+  })
 })

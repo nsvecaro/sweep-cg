@@ -2,16 +2,27 @@ import { applyAction, createGame } from '../engine/game.js'
 import type { Card, Difficulty, GameAction, GameEvent, GameState } from '../engine/types.js'
 import { normalizeLobbyCode } from '../lobby/codes.js'
 import { EMOTE_COOLDOWN_MS, EMOTE_IDS } from '../lobby/emotes.js'
+import { FINISHER_COOLDOWN_MS, FINISHER_GRADE_IDS, type FinisherGrade } from '../lobby/finishers.js'
 import { randomUsername, sanitizeUsername } from '../lobby/names.js'
 import { LOBBY_COUNTDOWN_MS, MAX_LOBBY_PLAYERS } from '../lobby/types.js'
 
 const LOG_LIMIT = 80
 const EMOTE_LOG_LIMIT = 20
+/** At most one per seat per game, so this only has to bound a pathological client. */
+const FINISHER_LOG_LIMIT = 8
 
 export interface RoomEmote {
   id: number
   playerId: string
   emote: string
+  at: number
+}
+
+/** Cosmetic only — the engine neither produces nor reads this. */
+export interface RoomFinisher {
+  id: number
+  playerId: string
+  grade: FinisherGrade
   at: number
 }
 
@@ -36,6 +47,8 @@ export interface RoomRecord {
   logSeq: number
   emotes: RoomEmote[]
   emoteSeq: number
+  finishers: RoomFinisher[]
+  finisherSeq: number
   updatedAt: number
 }
 
@@ -49,6 +62,7 @@ export type RoomCommand =
   | { type: 'start'; difficulty: Difficulty }
   | { type: 'action'; action: GameAction }
   | { type: 'emote'; playerId: string; emote: string }
+  | { type: 'finisher'; playerId: string; grade: FinisherGrade }
   | { type: 'returnToLobby' }
   | { type: 'leave' }
 
@@ -77,6 +91,8 @@ export function emptyRoom(code: string, hostId: string, now: number): RoomRecord
     logSeq: 0,
     emotes: [],
     emoteSeq: 0,
+    finishers: [],
+    finisherSeq: 0,
     updatedAt: now,
   }
 }
@@ -108,6 +124,8 @@ export function applyCommand(
       return act(room, command.action, ctx)
     case 'emote':
       return sendEmote(room, command.playerId, command.emote, ctx)
+    case 'finisher':
+      return sendFinisher(room, command.playerId, command.grade, ctx)
     case 'returnToLobby':
       return returnToLobby(room, ctx)
     case 'leave':
@@ -199,6 +217,7 @@ function start(room: RoomRecord, difficulty: Difficulty, ctx: CommandContext): C
     now: ctx.now,
   })
   room.log = []
+  room.finishers = []
   return { ok: true, room }
 }
 
@@ -231,6 +250,43 @@ function sendEmote(room: RoomRecord, playerId: string, emote: string, ctx: Comma
 
   room.emotes.push({ id: room.emoteSeq++, playerId, emote, at: ctx.now })
   if (room.emotes.length > EMOTE_LOG_LIMIT) room.emotes = room.emotes.slice(-EMOTE_LOG_LIMIT)
+  return { ok: true, room }
+}
+
+/**
+ * Broadcasts how well a player timed their finishing throw, so the whole table
+ * gets the same ending rather than only the device that made the gesture.
+ *
+ * The grade can't be derived server-side — it exists purely in the gesture —
+ * so this trusts the client for it. That's fine: it changes no card and no
+ * outcome. What it will not do is let a client fake the *moment*, hence the
+ * `isFinished` guard. You can only announce a finisher for a seat you own,
+ * that has actually gone out, in a game that actually exists.
+ */
+function sendFinisher(
+  room: RoomRecord,
+  playerId: string,
+  grade: FinisherGrade,
+  ctx: CommandContext,
+): CommandOutcome {
+  if (!FINISHER_GRADE_IDS.has(grade)) return fail('Unknown finisher grade')
+  const seat = room.seats.find((s) => s.playerId === playerId)
+  if (!seat) return fail('No such player')
+  if (seat.ownerId !== ctx.callerId) return fail('That is not your seat')
+
+  const player = room.game?.players.find((p) => p.playerId === playerId)
+  if (!player?.isFinished) return fail('That player has not gone out')
+
+  // Rooms written before this feature shipped have no `finishers` array yet.
+  room.finishers ??= []
+  room.finisherSeq ??= 0
+  const last = [...room.finishers].reverse().find((f) => f.playerId === playerId)
+  if (last && ctx.now - last.at < FINISHER_COOLDOWN_MS) return fail('Not so fast')
+
+  room.finishers.push({ id: room.finisherSeq++, playerId, grade, at: ctx.now })
+  if (room.finishers.length > FINISHER_LOG_LIMIT) {
+    room.finishers = room.finishers.slice(-FINISHER_LOG_LIMIT)
+  }
   return { ok: true, room }
 }
 
@@ -290,6 +346,9 @@ function returnToLobby(room: RoomRecord, ctx: CommandContext): CommandOutcome {
   room.status = 'waiting'
   room.game = null
   room.log = []
+  // A finisher belongs to the hand it ended. Left behind, a client joining
+  // mid-way through the next game would replay last game's ending.
+  room.finishers = []
   return { ok: true, room }
 }
 
@@ -332,6 +391,7 @@ export interface RoomView {
   game: GameState | null
   log: { id: number; event: GameEvent }[]
   emotes: RoomEmote[]
+  finishers: RoomFinisher[]
   version: number
 }
 
@@ -356,6 +416,7 @@ export function viewOf(room: RoomRecord, callerId: string, version: number): Roo
     ownedIds,
     log: room.log,
     emotes: room.emotes ?? [],
+    finishers: room.finishers ?? [],
     version,
     game: game && {
       ...game,

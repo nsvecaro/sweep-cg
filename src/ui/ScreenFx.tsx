@@ -66,6 +66,8 @@ export interface Impact {
 export interface Finale {
   id: number
   kind: FinisherEnding
+  /** Whose ending this is. Everyone at the table sees it, so it has to say who. */
+  who: string
   /** Drives the banner under the effect — the grade name, or the roast. */
   text: string
 }
@@ -381,7 +383,13 @@ export function ScreenFx({
       {finale && (
         <div key={`finale${finale.id}`} className={`finale finale--${finale.kind}`}>
           <FinaleBody finale={finale} />
-          <strong className="finale__text">{finale.text}</strong>
+          {/* Stacked in flow rather than each absolutely positioned: the roast
+              lines wrap to two rows, and anything offset by a fixed amount
+              ends up underneath them. */}
+          <div className="finale__say">
+            <span className="finale__who">{finale.who}</span>
+            <strong className="finale__text">{finale.text}</strong>
+          </div>
         </div>
       )}
 

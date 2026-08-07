@@ -2624,13 +2624,42 @@ input::placeholder {
   overflow: hidden;
 }
 
-.finale__text {
+/* One block, centred as a whole, so a two-line roast still sits under its name. */
+.finale__say {
   position: absolute;
   left: 50%;
   top: 34%;
   transform: translate(-50%, -50%);
   width: min(92vw, 760px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
   text-align: center;
+}
+
+/* Everyone at the table sees this, so it has to name whose ending it is. */
+.finale__who {
+  font-size: var(--ui-sm);
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  color: var(--bone);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.9);
+  animation: finaleWho 400ms var(--lift) both;
+}
+
+.finale--miss .finale__who {
+  color: var(--flame);
+}
+
+@keyframes finaleWho {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}
+
+.finale__text {
   font-family: var(--font-dmd);
   font-variation-settings: var(--dmd-axes);
   font-weight: 900;
@@ -2654,7 +2683,7 @@ input::placeholder {
 @keyframes finaleText {
   from {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(2.4);
+    transform: scale(2.4);
   }
 }
 

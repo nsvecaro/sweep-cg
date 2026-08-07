@@ -156,10 +156,12 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
   /** Finisher effects fire on your gesture, before any log entry exists — negative ids
       so they can never collide with the log-id keyed blasts and banners. */
   const finisherSeq = useRef(0)
-  /** Cards mid-slam. `planFlights` reads this to know a throw is a finisher. */
-  const slamIds = useRef<Set<string>>(new Set())
   /** The grade of a finisher already dispatched, waiting for its cards to land. */
   const pendingEnding = useRef<FinisherGrade | null>(null)
+  /** Seats whose ending this browser already played, so the broadcast can't replay it. */
+  const localFinales = useRef<Set<string>>(new Set())
+  const lastFinisherId = useRef(-1)
+  const seenFinishers = useRef(false)
   /** When the running animation finishes — the results panel queues behind it. */
   const busyUntil = useRef(0)
   const revealBatch = useRef(0)
@@ -308,13 +310,19 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
    * the next event in the batch should start from.
    */
   const planFlights = useCallback(
-    (event: GameEvent, pile: Rect, spawned: Flight[], reveals: Map<string, number>, baseDelay: number): number => {
+    (
+      event: GameEvent,
+      pile: Rect,
+      spawned: Flight[],
+      reveals: Map<string, number>,
+      baseDelay: number,
+      slam = false,
+    ): number => {
       if (event.type === 'CardsPlayed') {
         const cards = event.cards
         let latest = baseDelay
-        // A finisher throw doesn't drift in — it slams, all cards arriving as
-        // one hit, so the ending has a single frame to detonate on.
-        const slam = cards.some((card) => slamIds.current.has(card.id))
+        // A game-ending throw doesn't drift in — it slams, all cards arriving
+        // as one hit, so the ending has a single frame to detonate on.
         const stagger = slam ? SLAM_STAGGER_MS : PLAY_STAGGER_MS
         const travel = slam ? SLAM_MS : FLIGHT_MS
         cards.forEach((card, i) => {
@@ -431,11 +439,20 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
     /** One small answer per play, fired when that play's own cards land. */
     const beats: { pulse: Pulse; at: number; mine: boolean }[] = []
 
+    // Worked out up front: `PlayerFinished` lands after the `CardsPlayed` that
+    // caused it, but the throw has to know it was the last one before it flies.
+    const wentOut = new Set(
+      fresh.flatMap((e) => (e.event.type === 'PlayerFinished' ? [e.event.playerId] : [])),
+    )
+
     for (const entry of fresh) {
       const shout = shoutFor(entry.event, entry.id, game.difficulty, nameOf)
       playSoundForEvent(entry.event, shout)
       if (shout && (!loudest || shout.force >= loudest.force)) loudest = { ...shout, id: entry.id }
-      if (!reduced && pile) cursor = planFlights(entry.event, pile, spawned, reveals, cursor)
+      if (!reduced && pile) {
+        const slam = entry.event.type === 'CardsPlayed' && wentOut.has(entry.event.playerId)
+        cursor = planFlights(entry.event, pile, spawned, reveals, cursor, slam)
+      }
 
       // Plays are the events that can otherwise pass in silence — the loud ones
       // already earn a blast. Everything that reaches the pile gets this.
@@ -461,17 +478,24 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
     // Nothing may put a panel over the table until the last card has landed.
     busyUntil.current = Math.max(busyUntil.current, Date.now() + impact)
 
-    // A finisher we dispatched has come back off the log. Detonate on the frame
-    // its cards hit the pile, and hold the results panel behind the whole show.
+    // Everyone whose going-out is about to get a full ending instead of the
+    // ordinary shout. `room.finishers` comes from this same snapshot, which is
+    // where another player's grade usually arrives alongside the log that
+    // earned it; our own gesture never has to wait for that round trip.
+    const announced = new Set(room.finishers.map((f) => f.playerId))
+    const gettingAnEnding = new Set([...wentOut].filter((id) => announced.has(id)))
+
     const grade = pendingEnding.current
-    if (grade && fresh.some((e) => e.event.type === 'PlayerFinished' && e.event.playerId === viewerId)) {
+    if (grade && wentOut.has(viewerId)) {
       pendingEnding.current = null
-      slamIds.current = new Set()
+      localFinales.current.add(viewerId)
+      gettingAnEnding.add(viewerId)
       busyUntil.current = Math.max(busyUntil.current, Date.now() + impact + FINALE_MS)
-      later(() => runEnding(grade), impact)
-      // The ordinary "OUT! CLEAN HANDS" shout would talk over the ending.
-      loudest = null
+      later(() => runEnding(grade, viewer.name), impact)
     }
+
+    // The "OUT! CLEAN HANDS" shout would talk straight over any of those.
+    if (loudest && loudest.tone === 'out' && gettingAnEnding.size > 0) loudest = null
 
     for (const beat of beats) {
       later(() => {
@@ -513,6 +537,36 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
   }, [room.log])
 
   /**
+   * Somebody else at the table finished with a gesture. Their grade only exists
+   * on their device, so it comes over its own channel — this is what makes the
+   * ending a table-wide event instead of a private one.
+   *
+   * It's scheduled behind whatever is already in flight, which lines it up with
+   * their cards hitting the pile whenever the log and the grade arrive in the
+   * same snapshot (the normal case — the server records both before the next
+   * poll). Our own gesture is skipped here; it already ran, instantly.
+   */
+  useLayoutEffect(() => {
+    if (!seenFinishers.current) {
+      seenFinishers.current = true
+      lastFinisherId.current = room.finishers.at(-1)?.id ?? -1
+      return
+    }
+    const fresh = room.finishers.filter((entry) => entry.id > lastFinisherId.current)
+    if (fresh.length === 0) return
+    lastFinisherId.current = room.finishers.at(-1)!.id
+
+    for (const entry of fresh) {
+      if (localFinales.current.has(entry.playerId)) continue
+      localFinales.current.add(entry.playerId)
+      const wait = Math.max(0, busyUntil.current - Date.now())
+      busyUntil.current = Date.now() + wait + FINALE_MS
+      later(() => runEnding(entry.grade, nameOf(entry.playerId)), wait)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room.finishers])
+
+  /**
    * The results panel queues behind whatever is still playing, then waits
    * another beat. Landing a finisher and having a panel drop on top of the
    * explosion half a frame later wastes the only moment the feature exists for.
@@ -529,7 +583,9 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
     const wait = Math.max(0, busyUntil.current - Date.now()) + RESULT_DELAY_MS
     const timer = window.setTimeout(() => setShowResult(true), wait)
     return () => window.clearTimeout(timer)
-  }, [game.phase])
+    // A finisher arriving after the game ended extends `busyUntil`, so this has
+    // to re-run and push the panel back rather than land on top of the ending.
+  }, [game.phase, room.finishers.length])
 
   useLayoutEffect(() => {
     if (!seenEmotes.current) {
@@ -655,7 +711,7 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
    * great) changes how hard it shakes.
    */
   const runEnding = useCallback(
-    (grade: FinisherGrade) => {
+    (grade: FinisherGrade, who: string) => {
       const kind = endingFor(grade)
       const id = --finisherSeq.current
       const text = kind === 'hit' ? GRADE_LABEL[grade] : missLine(id)
@@ -669,12 +725,12 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
 
       if (reduced) {
         // No screen-wide motion, but the words still have to be said.
-        setBanner({ id, who: viewer.name, text, tone: kind === 'hit' ? 'out' : 'take', force: 3, scale: 3 })
+        setBanner({ id, who, text, tone: kind === 'hit' ? 'out' : 'take', force: 3, scale: 3 })
         later(() => setBanner((b) => (b?.id === id ? null : b)), FINALE_MS)
         return
       }
 
-      setFinale({ id, kind, text })
+      setFinale({ id, kind, who, text })
       later(() => setFinale((f) => (f?.id === id ? null : f)), FINALE_MS)
 
       // Everything on the table shakes, hardest for a perfect.
@@ -689,7 +745,7 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
         later(() => setImpactFrame((f) => (f?.id === id ? null : f)), 320)
       }
     },
-    [later, reduced, viewer.name],
+    [later, reduced],
   )
 
   /**
@@ -704,14 +760,27 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
       if (rect) thrownFrom.current.set(card.id, rect)
     }
 
-    slamIds.current = new Set(finisher.cards.map((c) => c.id))
     pendingEnding.current = grade
     playFinisherStinger(grade)
     vibrate(GRADE_BUZZ[grade])
 
-    void send(
-      transport.dispatch({ type: 'playCards', playerId: viewerId, cardIds: finisher.cards.map((c) => c.id) }),
-    )
+    void (async () => {
+      const played = await transport.dispatch({
+        type: 'playCards',
+        playerId: viewerId,
+        cardIds: finisher.cards.map((c) => c.id),
+      })
+      if (!played.ok) {
+        // The throw was refused, so there is no ending to announce or to play.
+        pendingEnding.current = null
+        return onError(played.error)
+      }
+      onError(null)
+      // Only now is the seat actually out, which is what the room checks before
+      // it will broadcast a grade. Failing here costs the table the ending but
+      // never the game, so it stays a silent no-op rather than a toast.
+      await transport.sendFinisher(viewerId, grade)
+    })()
   }
 
   const chosenValue = chosen.length > 0 ? owned.find((c) => c.id === chosen[0])?.value : undefined

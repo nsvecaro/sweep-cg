@@ -1,12 +1,16 @@
 import { boardOf, canPlayValue, playableZone, type Card, type GameState, type PlayerState } from '@/engine'
+import type { FinisherGrade } from '@/lobby'
 
 /**
  * The finisher: the throw that empties your last zone gets a gesture of its
  * own instead of the ordinary Throw button. It changes nothing about the game
  * — the same cards go to the same pile — it only grades how well you timed the
  * release, and the screen answers in proportion.
+ *
+ * The grade itself is declared in `lobby/finishers`, because the server has to
+ * validate it before broadcasting it to the rest of the table.
  */
-export type FinisherGrade = 'perfect' | 'great' | 'clean'
+export type { FinisherGrade }
 
 /** One full left-to-right-and-back pass of the timing marker. */
 export const SWEEP_MS = 1400

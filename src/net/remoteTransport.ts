@@ -1,7 +1,7 @@
 import type { Difficulty, GameAction } from '@/engine'
-import { sanitizeUsername, type Lobby, type PlayerProfile, type Result } from '@/lobby'
+import { sanitizeUsername, type FinisherGrade, type Lobby, type PlayerProfile, type Result } from '@/lobby'
 import type { RoomView } from '@/server/room'
-import type { EmoteEntry, LogEntry, RoomSnapshot, SweepTransport } from './transport'
+import type { EmoteEntry, FinisherEntry, LogEntry, RoomSnapshot, SweepTransport } from './transport'
 
 const POLL_MS = 1100
 // A lobby waiting to deal still needs to notice a host-started countdown quickly —
@@ -92,6 +92,7 @@ export class RemoteTransport implements SweepTransport {
       game: view ? view.game : null,
       log: view ? (view.log as LogEntry[]) : [],
       emotes: view ? (view.emotes as EmoteEntry[]) : [],
+      finishers: view ? ((view.finishers ?? []) as FinisherEntry[]) : [],
       connection: this.connection,
     }
   }
@@ -168,6 +169,11 @@ export class RemoteTransport implements SweepTransport {
 
   async sendEmote(playerId: string, emote: string): Promise<Result<null>> {
     const sent = await this.send({ type: 'emote', playerId, emote })
+    return sent.ok ? ok(null) : fail(sent.error)
+  }
+
+  async sendFinisher(playerId: string, grade: FinisherGrade): Promise<Result<null>> {
+    const sent = await this.send({ type: 'finisher', playerId, grade })
     return sent.ok ? ok(null) : fail(sent.error)
   }
 

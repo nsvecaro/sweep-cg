@@ -13,19 +13,23 @@ import {
 import {
   EMOTE_COOLDOWN_MS,
   EMOTE_IDS,
+  FINISHER_COOLDOWN_MS,
+  FINISHER_GRADE_IDS,
   LOBBY_COUNTDOWN_MS,
   LobbyService,
   MAX_LOBBY_PLAYERS,
   randomUsername,
+  type FinisherGrade,
   type Lobby,
   type PlayerProfile,
   type Result,
 } from '@/lobby'
-import type { EmoteEntry, LogEntry, RoomSnapshot, SweepTransport } from './transport'
+import type { EmoteEntry, FinisherEntry, LogEntry, RoomSnapshot, SweepTransport } from './transport'
 
 const BOT_DELAY_MS = 750
 const LOG_LIMIT = 80
 const EMOTE_LOG_LIMIT = 20
+const FINISHER_LOG_LIMIT = 8
 
 const ok = <T>(value: T): Result<T> => ({ ok: true, value })
 const fail = <T>(error: string): Result<T> => ({ ok: false, error })
@@ -46,6 +50,8 @@ export class LocalTransport implements SweepTransport {
   private logSeq = 0
   private emotes: EmoteEntry[] = []
   private emoteSeq = 0
+  private finishers: FinisherEntry[] = []
+  private finisherSeq = 0
   private listeners = new Set<(snapshot: RoomSnapshot) => void>()
   private botTimer: ReturnType<typeof setTimeout> | null = null
   private timeoutTimer: ReturnType<typeof setTimeout> | null = null
@@ -61,6 +67,7 @@ export class LocalTransport implements SweepTransport {
       game: this.game,
       log: this.log,
       emotes: this.emotes,
+      finishers: this.finishers,
     }
   }
 
@@ -191,6 +198,7 @@ export class LocalTransport implements SweepTransport {
       })),
     })
     this.log = []
+    this.finishers = []
     this.publish()
     this.scheduleBot()
     this.scheduleTimeout()
@@ -236,6 +244,24 @@ export class LocalTransport implements SweepTransport {
     return ok(null)
   }
 
+  /** Mirrors the server's guard so pass-and-play behaves like an online table. */
+  async sendFinisher(playerId: string, grade: FinisherGrade): Promise<Result<null>> {
+    if (!FINISHER_GRADE_IDS.has(grade)) return fail('Unknown finisher grade')
+    if (!this.ownedIds.has(playerId)) return fail('That is not your seat')
+    if (!this.game?.players.find((p) => p.playerId === playerId)?.isFinished) {
+      return fail('That player has not gone out')
+    }
+
+    const last = [...this.finishers].reverse().find((f) => f.playerId === playerId)
+    const now = Date.now()
+    if (last && now - last.at < FINISHER_COOLDOWN_MS) return fail('Not so fast')
+
+    this.finishers = [...this.finishers, { id: this.finisherSeq++, playerId, grade, at: now }]
+    if (this.finishers.length > FINISHER_LOG_LIMIT) this.finishers = this.finishers.slice(-FINISHER_LOG_LIMIT)
+    this.publish()
+    return ok(null)
+  }
+
   private applyLocally(action: GameAction): Result<null> {
     if (!this.game) return fail('No game in progress')
     const result = applyAction(this.game, action)
@@ -255,6 +281,7 @@ export class LocalTransport implements SweepTransport {
     this.clearTimeoutTimer()
     this.game = null
     this.log = []
+    this.finishers = []
     this.lobbyService.setStatus(lobby.value.code, 'waiting')
     this.publish()
     return ok(null)
@@ -271,6 +298,7 @@ export class LocalTransport implements SweepTransport {
     this.code = null
     this.game = null
     this.log = []
+    this.finishers = []
     this.emotes = []
     this.botIds.clear()
     this.ownedIds = new Set([this.selfId])

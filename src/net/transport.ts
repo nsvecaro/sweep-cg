@@ -1,5 +1,5 @@
 import type { Difficulty, GameAction, GameEvent, GameState } from '@/engine'
-import type { Lobby, PlayerProfile, Result } from '@/lobby'
+import type { FinisherGrade, Lobby, PlayerProfile, Result } from '@/lobby'
 
 export interface LogEntry {
   id: number
@@ -13,6 +13,18 @@ export interface EmoteEntry {
   at: number
 }
 
+/**
+ * How a player timed their finishing throw. Cosmetic, and its own channel
+ * rather than a game event: the grade only exists on the device that made the
+ * gesture, and the whole table should see the ending it earned.
+ */
+export interface FinisherEntry {
+  id: number
+  playerId: string
+  grade: FinisherGrade
+  at: number
+}
+
 export interface RoomSnapshot {
   selfId: string
   lobby: Lobby | null
@@ -23,6 +35,8 @@ export interface RoomSnapshot {
   game: GameState | null
   log: LogEntry[]
   emotes: EmoteEntry[]
+  /** Finishing throws announced this game, oldest first. */
+  finishers: FinisherEntry[]
   /** Set when the room is unreachable; the UI shows it instead of the table. */
   connection?: 'online' | 'offline'
 }
@@ -51,6 +65,8 @@ export interface SweepTransport {
   dispatch(action: GameAction): Promise<Result<null>>
   /** Fire-and-forget table talk — not a game move, so it never touches the engine. */
   sendEmote(playerId: string, emote: string): Promise<Result<null>>
+  /** Tells the table how a finishing throw was timed, so everyone sees the same ending. */
+  sendFinisher(playerId: string, grade: FinisherGrade): Promise<Result<null>>
   returnToLobby(): Promise<Result<null>>
   /** Forfeits any game in progress, then drops the seat from the room. */
   leave(): Promise<void>
