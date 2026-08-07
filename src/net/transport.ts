@@ -6,6 +6,13 @@ export interface LogEntry {
   event: GameEvent
 }
 
+export interface EmoteEntry {
+  id: number
+  playerId: string
+  emote: string
+  at: number
+}
+
 export interface RoomSnapshot {
   selfId: string
   lobby: Lobby | null
@@ -15,6 +22,7 @@ export interface RoomSnapshot {
   ownedIds: string[]
   game: GameState | null
   log: LogEntry[]
+  emotes: EmoteEntry[]
   /** Set when the room is unreachable; the UI shows it instead of the table. */
   connection?: 'online' | 'offline'
 }
@@ -41,6 +49,8 @@ export interface SweepTransport {
   startCountdown(): Promise<Result<null>>
   startGame(difficulty: Difficulty): Promise<Result<null>>
   dispatch(action: GameAction): Promise<Result<null>>
+  /** Fire-and-forget table talk — not a game move, so it never touches the engine. */
+  sendEmote(playerId: string, emote: string): Promise<Result<null>>
   returnToLobby(): Promise<Result<null>>
   /** Forfeits any game in progress, then drops the seat from the room. */
   leave(): Promise<void>

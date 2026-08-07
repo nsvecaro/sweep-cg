@@ -18,6 +18,8 @@ import { PlayLog, Ticker } from './PlayLog'
 import { Result } from './Result'
 import { ScreenFx, type Banner, type Blast, type Flight } from './ScreenFx'
 import { shoutFor, type Shout } from './commentary'
+import { EmoteBubbles, type EmoteBubble } from './EmoteFx'
+import { EmotePicker } from './EmotePicker'
 import { demandOf } from './format'
 import { isMuted, playSoundForEvent, playYourTurnCue, subscribeMuted, toggleMuted } from './sound'
 import { vibrate } from './haptics'
@@ -28,6 +30,10 @@ const PICKUP_STAGGER_MS = 40
 const MAX_PICKUP_GHOSTS = 7
 /** How deep into the pile stays visible. Anything older is the ribbon's job. */
 const PILE_SHOWN = 5
+/** A seat spamming reactions caps out at this many on screen at once. */
+const MAX_EMOTES_PER_SEAT = 5
+/** Taller than the widest bubble shape (the fire combo) so a stacked burst never touches itself. */
+const EMOTE_STACK_GAP = 44
 
 interface Rect {
   cx: number
@@ -107,19 +113,26 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
   const [flash, setFlash] = useState<{ id: number; tone: Shout['tone'] } | null>(null)
   const [quake, setQuake] = useState<{ id: number; force: number } | null>(null)
   const [revealAt, setRevealAt] = useState<Map<string, number>>(EMPTY_REVEALS)
+  const [emoteBubbles, setEmoteBubbles] = useState<EmoteBubble[]>([])
 
   const reduced = usePrefersReducedMotion()
 
   const lastLogId = useRef(-1)
   const seenLog = useRef(false)
+  const lastEmoteId = useRef(-1)
+  const seenEmotes = useRef(false)
   const flightSeq = useRef(0)
   const revealBatch = useRef(0)
   const timers = useRef<number[]>([])
 
   const pileRef = useRef<HTMLDivElement>(null)
   const handRef = useRef<HTMLDivElement>(null)
+  const youRef = useRef<HTMLDivElement>(null)
   const seatRefs = useRef<Map<string, Element>>(new Map())
   const seatCallbacks = useRef<Map<string, (el: Element | null) => void>>(new Map())
+  /** The outer seat card, for anchoring emotes below a player rather than at their hand count. */
+  const seatAnchorRefs = useRef<Map<string, Element>>(new Map())
+  const seatAnchorCallbacks = useRef<Map<string, (el: Element | null) => void>>(new Map())
   const cardRefs = useRef<Map<string, Element>>(new Map())
   const cardCallbacks = useRef<Map<string, (el: Element | null) => void>>(new Map())
   /** Rects grabbed the instant before a throw, while the cards are still on screen. */
@@ -170,6 +183,18 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
         else seatRefs.current.delete(id)
       }
       seatCallbacks.current.set(id, cb)
+    }
+    return cb
+  }, [])
+
+  const registerSeatAnchor = useCallback((id: string) => {
+    let cb = seatAnchorCallbacks.current.get(id)
+    if (!cb) {
+      cb = (el: Element | null) => {
+        if (el) seatAnchorRefs.current.set(id, el)
+        else seatAnchorRefs.current.delete(id)
+      }
+      seatAnchorCallbacks.current.set(id, cb)
     }
     return cb
   }, [])
@@ -391,6 +416,53 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
   }, [room.log])
 
   useLayoutEffect(() => {
+    if (!seenEmotes.current) {
+      seenEmotes.current = true
+      lastEmoteId.current = room.emotes.at(-1)?.id ?? -1
+      return
+    }
+    const fresh = room.emotes.filter((entry) => entry.id > lastEmoteId.current)
+    if (fresh.length === 0) return
+    lastEmoteId.current = room.emotes.at(-1)!.id
+
+    const spawned: EmoteBubble[] = []
+    // Stacked per seat so a burst of taps rises as a column instead of one blob.
+    const stackDepth = new Map<string, number>()
+    for (const entry of fresh) {
+      const el = entry.playerId === viewerId ? youRef.current : seatAnchorRefs.current.get(entry.playerId)
+      if (!el) continue
+      const box = el.getBoundingClientRect()
+      if (box.width === 0 && box.height === 0) continue
+      const depth = stackDepth.get(entry.playerId) ?? 0
+      stackDepth.set(entry.playerId, depth + 1)
+      spawned.push({
+        id: `e${entry.id}`,
+        playerId: entry.playerId,
+        emote: entry.emote,
+        x: box.left + box.width / 2,
+        y: box.bottom - depth * EMOTE_STACK_GAP,
+      })
+    }
+    if (spawned.length === 0) return
+
+    setEmoteBubbles((prev) => {
+      let next = prev
+      for (const bubble of spawned) {
+        const active = next.filter((b) => b.playerId === bubble.playerId)
+        if (active.length >= MAX_EMOTES_PER_SEAT) {
+          const oldest = active[0].id
+          next = next.filter((b) => b.id !== oldest)
+        }
+        next = [...next, bubble]
+      }
+      return next
+    })
+    const ids = new Set(spawned.map((b) => b.id))
+    later(() => setEmoteBubbles((prev) => prev.filter((b) => !ids.has(b.id))), 1800)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room.emotes])
+
+  useLayoutEffect(() => {
     if (replayLogId == null) return
     const entry = room.log.find((e) => e.id === replayLogId)
     const pile = rectOf(pileRef.current)
@@ -485,6 +557,7 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
               active={game.activePlayerId === player.playerId}
               secondsLeft={game.activePlayerId === player.playerId ? secondsLeft : null}
               seatRef={registerSeat(player.playerId)}
+              anchorRef={registerSeatAnchor(player.playerId)}
             />
           ))}
         </section>
@@ -551,12 +624,13 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
         </section>
 
         <section className={`you ${isMyTurn ? 'you--active' : ''}`}>
-          <div className="you__head">
+          <div className="you__head" ref={youRef}>
             <span className="you__name">{viewer.name}</span>
             <span className="you__meta">
               {isMyTurn && secondsLeft !== null && <Clock seconds={secondsLeft} />}
               <span className="you__turn">{isMyTurn ? 'your throw' : `${nameOf(game.activePlayerId)} is thinking`}</span>
             </span>
+            <EmotePicker transport={transport} playerId={viewerId} onError={onError} />
           </div>
 
           <div className="tableau">
@@ -640,6 +714,7 @@ export function GameTable({ transport, room, game, viewerId, onError, replayLogI
       </main>
 
       <ScreenFx flights={flights} blasts={blasts} banner={banner} flash={flash} />
+      <EmoteBubbles bubbles={emoteBubbles} />
       <PlayLog room={room} game={game} />
       {game.phase === 'finished' && <Result game={game} onDone={() => void send(transport.returnToLobby())} />}
     </>
@@ -683,16 +758,21 @@ function OpponentSeat({
   active,
   secondsLeft,
   seatRef,
+  anchorRef,
 }: {
   player: PlayerState
   difficulty: GameState['difficulty']
   active: boolean
   secondsLeft: number | null
   seatRef: (el: Element | null) => void
+  anchorRef: (el: Element | null) => void
 }) {
   const slots = tableSlotsFor(player)
   return (
-    <article className={`seat ${active ? 'seat--active' : ''} ${player.isFinished ? 'seat--out' : ''}`}>
+    <article
+      className={`seat ${active ? 'seat--active' : ''} ${player.isFinished ? 'seat--out' : ''}`}
+      ref={anchorRef}
+    >
       <header className="seat__head">
         <span className="seat__name">{player.name}</span>
         {secondsLeft !== null && <Clock seconds={secondsLeft} />}

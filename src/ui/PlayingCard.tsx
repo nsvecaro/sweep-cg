@@ -57,7 +57,7 @@ const DIGIT_ROWS = 7
  * clocks. Left unset the glyph is decoration, and whatever wraps it (a card's
  * own aria-label, a list item's) does the talking.
  */
-function Bitmap({ grid, className, label }: { grid: string[]; className?: string; label?: string }) {
+export function Bitmap({ grid, className, label }: { grid: string[]; className?: string; label?: string }) {
   const height = grid.length
   const width = grid[0].length
   const cells = grid.flatMap((row, y) =>

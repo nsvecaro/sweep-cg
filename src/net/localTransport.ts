@@ -9,6 +9,8 @@ import {
   type GameState,
 } from '@/engine'
 import {
+  EMOTE_COOLDOWN_MS,
+  EMOTE_IDS,
   LOBBY_COUNTDOWN_MS,
   LobbyService,
   MAX_LOBBY_PLAYERS,
@@ -17,10 +19,11 @@ import {
   type PlayerProfile,
   type Result,
 } from '@/lobby'
-import type { LogEntry, RoomSnapshot, SweepTransport } from './transport'
+import type { EmoteEntry, LogEntry, RoomSnapshot, SweepTransport } from './transport'
 
 const BOT_DELAY_MS = 750
 const LOG_LIMIT = 80
+const EMOTE_LOG_LIMIT = 20
 
 const ok = <T>(value: T): Result<T> => ({ ok: true, value })
 const fail = <T>(error: string): Result<T> => ({ ok: false, error })
@@ -39,6 +42,8 @@ export class LocalTransport implements SweepTransport {
   private game: GameState | null = null
   private log: LogEntry[] = []
   private logSeq = 0
+  private emotes: EmoteEntry[] = []
+  private emoteSeq = 0
   private listeners = new Set<(snapshot: RoomSnapshot) => void>()
   private botTimer: ReturnType<typeof setTimeout> | null = null
   private timeoutTimer: ReturnType<typeof setTimeout> | null = null
@@ -53,6 +58,7 @@ export class LocalTransport implements SweepTransport {
       ownedIds: [...this.ownedIds],
       game: this.game,
       log: this.log,
+      emotes: this.emotes,
     }
   }
 
@@ -193,6 +199,20 @@ export class LocalTransport implements SweepTransport {
     return this.applyLocally(action)
   }
 
+  async sendEmote(playerId: string, emote: string): Promise<Result<null>> {
+    if (!EMOTE_IDS.has(emote)) return fail('Unknown emote')
+    if (!this.ownedIds.has(playerId)) return fail('That is not your seat')
+
+    const last = [...this.emotes].reverse().find((e) => e.playerId === playerId)
+    const now = Date.now()
+    if (last && now - last.at < EMOTE_COOLDOWN_MS) return fail('Not so fast')
+
+    this.emotes = [...this.emotes, { id: this.emoteSeq++, playerId, emote, at: now }]
+    if (this.emotes.length > EMOTE_LOG_LIMIT) this.emotes = this.emotes.slice(-EMOTE_LOG_LIMIT)
+    this.publish()
+    return ok(null)
+  }
+
   private applyLocally(action: GameAction): Result<null> {
     if (!this.game) return fail('No game in progress')
     const result = applyAction(this.game, action)
@@ -228,6 +248,7 @@ export class LocalTransport implements SweepTransport {
     this.code = null
     this.game = null
     this.log = []
+    this.emotes = []
     this.botIds.clear()
     this.ownedIds = new Set([this.selfId])
     this.publish()

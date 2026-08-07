@@ -1917,3 +1917,277 @@ input::placeholder {
     max-width: 7ch;
   }
 }
+
+/* ---- emotes ---- */
+
+.emoteFan {
+  position: relative;
+  display: inline-flex;
+}
+
+.emoteFan__trigger {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--dust);
+  transition: transform 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.emoteFan__trigger:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--bone);
+}
+
+.emoteFan__trigger--open {
+  color: var(--volt);
+  border-color: var(--volt);
+}
+
+.emoteFan__triggerGlyph {
+  width: 15px;
+  height: 15px;
+}
+
+.emoteFan__ring {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  z-index: 86;
+}
+
+.emoteFan__slot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* Wide enough that a word pill or the fire combo, the fan's two biggest
+     shapes, clear their neighbors at this angular spacing. */
+  transform: rotate(var(--angle)) translateY(-80px);
+  animation: emoteSlotIn 260ms var(--spring) both;
+  animation-delay: calc(var(--i) * 22ms);
+}
+
+@keyframes emoteSlotIn {
+  from {
+    transform: rotate(var(--angle)) translateY(0);
+  }
+  to {
+    transform: rotate(var(--angle)) translateY(-80px);
+  }
+}
+
+.emoteFan__btn {
+  /* Counter-rotate the slot's own placement rotation so the glyph stays upright. */
+  transform: translate(-50%, -50%) rotate(calc(-1 * var(--angle)));
+  color: var(--bone);
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--ink);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.4);
+  transition: transform 0.12s ease, background 0.12s ease, opacity 0.12s ease;
+}
+
+.emoteFan__btn:hover:not(:disabled) {
+  background: var(--felt);
+}
+
+.emoteFan__btn:active:not(:disabled) {
+  transform: translate(-50%, -50%) rotate(calc(-1 * var(--angle))) scale(0.88);
+}
+
+.emoteFan__btn:disabled {
+  opacity: 0.35;
+}
+
+/* A word or an icon+word combo doesn't fit a tight circle — same button,
+   a roomier shape. Declared after .emoteFan__btn so the override sticks. */
+.emoteFan__btn--word {
+  width: auto;
+  min-width: 30px;
+  height: 22px;
+  border-radius: 6px;
+  padding: 0 6px;
+}
+
+.emoteFan__btn--combo {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+}
+
+.emoteFan__glyph {
+  width: 13px;
+  height: 13px;
+}
+
+.emoteFan__btn--word .emoteFan__glyph {
+  width: 100%;
+  height: 10px;
+}
+
+.emoteGlyphCombo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.emoteGlyphCombo__icon {
+  width: 14px;
+  height: 14px;
+}
+
+.emoteGlyphCombo__word {
+  width: 20px;
+  height: 8px;
+}
+
+.emoteFan__btn--fire,
+.emoteFan__btn--angry {
+  color: var(--flame);
+}
+.emoteFan__btn--gg {
+  color: var(--volt);
+}
+.emoteFan__btn--think {
+  color: var(--ice);
+}
+.emoteFan__btn--laugh {
+  color: var(--dmd);
+}
+.emoteFan__btn--skull {
+  color: var(--dust);
+}
+
+.emoteFx {
+  position: fixed;
+  inset: 0;
+  z-index: 85;
+  pointer-events: none;
+}
+
+.emoteFx__bubble {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.55));
+  animation: emotePop 1.4s var(--spring) both;
+}
+
+/* Same roomier shapes as the picker button, for the same reason. */
+.emoteFx__bubble--word {
+  width: auto;
+  min-width: 32px;
+  height: 22px;
+  padding: 0 5px;
+}
+
+.emoteFx__bubble--combo {
+  width: 32px;
+  height: 32px;
+}
+
+.emoteFx__glyph {
+  width: 100%;
+  height: 100%;
+}
+
+.emoteFx__bubble--word .emoteFx__glyph {
+  height: 11px;
+}
+
+.emoteFx__bubble--combo .emoteGlyphCombo__icon {
+  width: 15px;
+  height: 15px;
+}
+.emoteFx__bubble--combo .emoteGlyphCombo__word {
+  width: 20px;
+  height: 7px;
+}
+
+.emoteFx__bubble--dmd {
+  color: var(--dmd);
+}
+.emoteFx__bubble--volt {
+  color: var(--volt);
+}
+.emoteFx__bubble--flame {
+  color: var(--flame);
+}
+.emoteFx__bubble--ice {
+  color: var(--ice);
+}
+.emoteFx__bubble--dust {
+  color: var(--dust);
+}
+.emoteFx__bubble--bone {
+  color: var(--bone);
+}
+
+@keyframes emotePop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -20%) scale(0.4);
+  }
+  15% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.15);
+  }
+  25% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  80% {
+    opacity: 1;
+    transform: translate(-50%, -220%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -260%) scale(0.9);
+  }
+}
+
+@media (max-width: 600px) {
+  .emoteFan__slot {
+    transform: rotate(var(--angle)) translateY(-68px);
+  }
+
+  @keyframes emoteSlotIn {
+    from {
+      transform: rotate(var(--angle)) translateY(0);
+    }
+    to {
+      transform: rotate(var(--angle)) translateY(-68px);
+    }
+  }
+
+  .emoteFan__btn {
+    width: 22px;
+    height: 22px;
+  }
+
+  .emoteFan__btn--word {
+    min-width: 26px;
+    height: 19px;
+    padding: 0 4px;
+  }
+
+  .emoteFan__btn--combo {
+    width: 28px;
+    height: 28px;
+  }
+}

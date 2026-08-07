@@ -1,10 +1,19 @@
 import { applyAction, createGame } from '../engine/game.js'
 import type { Card, Difficulty, GameAction, GameEvent, GameState } from '../engine/types.js'
 import { normalizeLobbyCode } from '../lobby/codes.js'
+import { EMOTE_COOLDOWN_MS, EMOTE_IDS } from '../lobby/emotes.js'
 import { randomUsername, sanitizeUsername } from '../lobby/names.js'
 import { LOBBY_COUNTDOWN_MS, MAX_LOBBY_PLAYERS } from '../lobby/types.js'
 
 const LOG_LIMIT = 80
+const EMOTE_LOG_LIMIT = 20
+
+export interface RoomEmote {
+  id: number
+  playerId: string
+  emote: string
+  at: number
+}
 
 export interface RoomSeat {
   playerId: string
@@ -25,6 +34,8 @@ export interface RoomRecord {
   game: GameState | null
   log: { id: number; event: GameEvent }[]
   logSeq: number
+  emotes: RoomEmote[]
+  emoteSeq: number
   updatedAt: number
 }
 
@@ -37,6 +48,7 @@ export type RoomCommand =
   | { type: 'beginCountdown' }
   | { type: 'start'; difficulty: Difficulty }
   | { type: 'action'; action: GameAction }
+  | { type: 'emote'; playerId: string; emote: string }
   | { type: 'returnToLobby' }
   | { type: 'leave' }
 
@@ -63,6 +75,8 @@ export function emptyRoom(code: string, hostId: string, now: number): RoomRecord
     game: null,
     log: [],
     logSeq: 0,
+    emotes: [],
+    emoteSeq: 0,
     updatedAt: now,
   }
 }
@@ -92,6 +106,8 @@ export function applyCommand(
       return start(room, command.difficulty, ctx)
     case 'action':
       return act(room, command.action, ctx)
+    case 'emote':
+      return sendEmote(room, command.playerId, command.emote, ctx)
     case 'returnToLobby':
       return returnToLobby(room, ctx)
     case 'leave':
@@ -201,6 +217,23 @@ function act(room: RoomRecord, action: GameAction, ctx: CommandContext): Command
   return { ok: true, room }
 }
 
+function sendEmote(room: RoomRecord, playerId: string, emote: string, ctx: CommandContext): CommandOutcome {
+  if (!EMOTE_IDS.has(emote)) return fail('Unknown emote')
+  const seat = room.seats.find((s) => s.playerId === playerId)
+  if (!seat) return fail('No such player')
+  if (seat.ownerId !== ctx.callerId) return fail('That is not your seat')
+
+  // Rooms written before this feature shipped have no `emotes` array yet.
+  room.emotes ??= []
+  room.emoteSeq ??= 0
+  const last = [...room.emotes].reverse().find((e) => e.playerId === playerId)
+  if (last && ctx.now - last.at < EMOTE_COOLDOWN_MS) return fail('Not so fast')
+
+  room.emotes.push({ id: room.emoteSeq++, playerId, emote, at: ctx.now })
+  if (room.emotes.length > EMOTE_LOG_LIMIT) room.emotes = room.emotes.slice(-EMOTE_LOG_LIMIT)
+  return { ok: true, room }
+}
+
 // Slack behind the displayed 20s so a move that beat the clock client-side
 // doesn't get overtaken by clock skew and the command's own network hop.
 const TIMEOUT_GRACE_MS = 1000
@@ -298,6 +331,7 @@ export interface RoomView {
   ownedIds: string[]
   game: GameState | null
   log: { id: number; event: GameEvent }[]
+  emotes: RoomEmote[]
   version: number
 }
 
@@ -321,6 +355,7 @@ export function viewOf(room: RoomRecord, callerId: string, version: number): Roo
     members: room.seats.map((s) => ({ playerId: s.playerId, username: s.username })),
     ownedIds,
     log: room.log,
+    emotes: room.emotes ?? [],
     version,
     game: game && {
       ...game,
