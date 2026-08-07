@@ -11,3 +11,6 @@ coverage
 .netlify
 *.log
 *.tsbuildinfo
+
+# Local working notes, kept out of the repo
+CLAUDE.md
